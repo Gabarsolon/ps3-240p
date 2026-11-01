@@ -135,3 +135,9 @@ Based on the static hypervisor loader analysis documented in `docs/LV1_SYSMGR_SS
 - Consequence: the live copy of the AV-manager tables is somewhere else in memory (the sysmgr_ss module runs in its own mapping). Its real address is UNKNOWN. Scanning memory with webMAN's find/search is not safe as an experiment (reads of unmapped addresses can crash the hypervisor), so no scan was done.
 
 **Confirmed for the project:** the anchor values in the file are as predicted (the table bytes at the planned file offsets match this document), so the static analysis of the tables stands; only the live-peek route needs another way to find the loaded copy (for example following LV1's own module-load bookkeeping, found statically in LV1 4.93, to the sysmgr_ss load address).
+
+## Stage 1 result (run by the orchestrator on 2026-11-01, owner approved; one read-only GET of `/peek.lv1?36cdb0`)
+
+- The read worked (no fault); the stage-1 script's own parser failed on the page, so the view was parsed separately.
+- **The layout predicted by the static analysis did not match.** The 512-byte view has NO entries with a `1` flag at +0x00. Slots hold zero in the first word; the second word is non-zero only in five of the 32 slots: slot 0 = `0x6bb0d0`, slot 3 = `0x12c010`, slot 5 = `0x915d0`, slot 6 = `0xe5040`, slot 10 = `0x12c8d0`. Those look like pointers into low RAM / the heap, but what the table is, and whether these are process descriptors, is UNKNOWN.
+- Stage 1b (following a pointer) and stage 2 were NOT done: the premise "active slots are flagged and point to Process objects" is not confirmed, and the claim that the whole range `0..0x0fffffff` is safe to read is not proven.
