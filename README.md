@@ -4,7 +4,7 @@ Question: can a PS3 (CFW, Evilnat 4.93 + Cobra) output native 240p (NTSC) / 288p
 
 **Status: [verification pass complete — research and static analysis only](docs/RESEARCH.md).** Supported analog modes stop at 480i/576i; checked LV1 AV-manager tables supply standard raster profiles. Native 240p/288p remains unproven, and an encoder hardware prohibition is not established. Nothing was built or run on a console. The unverified [original AI draft](docs/RESEARCH_agy_draft.md) remains untouched as history.
 
-The report corrects hypercall/function mappings, AV packet layout, mode-ID namespaces, netemu profiles and the proposed RSX register recipe. The next research step is an offline trace of LV1 timing-table consumers and encoder control; no console access is authorized by this project status.
+The report corrects hypercall/function mappings, AV packet layout, mode-ID namespaces, netemu profiles and the proposed RSX register recipe. The [offline LV1 AV-manager trace](docs/LV1_AV_TRACE.md) follows timing-table consumers, encoder control and emulator mode requests; no console access is authorized by this project status.
 
 Rules: own console, no firmware or game files in this repository (Sony-derived files stay in a local, gitignored `local_only/`), research and static analysis only unless the owner says otherwise.
 
