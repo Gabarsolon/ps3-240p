@@ -90,30 +90,51 @@ When ready to test live on the console:
 2. On the local workstation, open PowerShell in the repository root.
 3. Execute the test script:
    ```powershell
+   # Run full staged resolution (Stage 1 -> Stage 1b -> Stage 2):
    powershell -ExecutionPolicy Bypass -File tools/lv1_anchor_peek.ps1 -ConsoleIP "192.168.0.169"
+
+   # Or run individual stages incrementally:
+   powershell -ExecutionPolicy Bypass -File tools/lv1_anchor_peek.ps1 -ConsoleIP "192.168.0.169" -Stage1Only
+   powershell -ExecutionPolicy Bypass -File tools/lv1_anchor_peek.ps1 -ConsoleIP "192.168.0.169" -Stage1bOnly
    ```
 4. Record the terminal output and return the printed word values, computed SHA-256 hashes, and PASS/FAIL status for each anchor.
 
-## Stage plan (two-stage dynamic resolution)
+## Stage plan (three-stage safe dynamic resolution)
 
-Based on the static hypervisor loader analysis documented in `docs/LV1_SYSMGR_SS_LOADADDR.md`, the live copy of `sysmgr_ss` executes in the isolated UX subsystem with virtual segments at `0x80000000` (text) and `0xc0000000` (data), backed by dynamically allocated physical RAM pages. To safely locate and verify the active tables without scanning memory or risking machine check exceptions, a two-stage read-only protocol is defined:
+Based on the static hypervisor loader and boot configuration analysis documented in `docs/LV1_SYSMGR_SS_LOADADDR.md`, the live copy of `sysmgr_ss` executes in the isolated UX subsystem with virtual segments at `0x80000000` (text) and `0xc0000000` (data), backed by dynamically allocated physical RAM pages.
 
-### Stage 1: Process Table Discovery (PROVEN SAFE)
-1. **Target address:** `0x36cdb0` (LV1 Process Table).
+Because `UserProgramLoader::load` does not write load addresses to static global variables and no static `AddressProtectionDomain` objects exist in `.bss`, segment load addresses must be resolved via the active process descriptor. To safely locate and verify the active tables without scanning memory or risking machine check exceptions, a three-stage read-only protocol is defined:
+
+### Stage 1: Static .bss Discovery (Process Table & Memory Bounds) — PROVEN SAFE
+1. **Target addresses:**
+   - `0x36cdb0`: Process Table (32 slots, 16 bytes each; 512 bytes total, fits in single `/peek.lv1` request).
+   - `0x3727d0`: Memory Manager global physical RAM boundaries (`RamBase` at `0x3727d0`, `RamLimit` at `0x3727d8`).
 2. **Safety rationale:**
-   - Resides strictly within the LV1 image's `.data`/`.bss` segment (`0x200000 .. 0x3c2c00`).
-   - The control reads of `0x20d060`, `0x32adb0`, and `0x300000` proved that this segment is mapped 1:1 and accessible via `/peek.lv1`.
-   - webMAN MOD `/peek.lv1` formats an aligned 512-byte view (`HEXVIEW_SIZE = 0x200`), capturing all 32 process slots (PIDs 0..31, 16 bytes each) in a single HTTP GET request.
-   - Reading ordinary mapped kernel data carries zero risk of bus faults, MMIO side-effects, or display timing interruption.
+   - Both addresses reside strictly within the LV1 image's `.data`/`.bss` segment (`0x200000 .. 0x3c2c00`).
+   - Control reads of `0x20d060`, `0x32adb0`, and `0x300000` proved this segment is mapped 1:1 and accessible via `/peek.lv1`.
+   - webMAN MOD `/peek.lv1` formats an aligned 512-byte view (`HEXVIEW_SIZE = 0x200`), capturing the entire 32-slot table in a single HTTP GET request.
+   - Reading static mapped kernel memory carries zero risk of bus faults, MMIO side-effects, or display timing interruption.
 3. **Execution & Interpretation:**
    - Query: `GET http://192.168.0.169/peek.lv1?36cdb0`
-   - Active process slots have flag `0x0000000000000001` at `+0x00` and a non-null pointer `Process *proc` at `+0x08`.
-   - Identifying `sysmgr_ss.fself` (typically PID 2 or 3) gives the process descriptor pointer.
-4. **Process name confirmation (Conditional):**
-   - Dereferencing `proc + 0x638` (`UserProgramLoader*`) and reading the loader's descriptor at offset `+0x240` (16 bytes) confirms the ASCII name string `"sysmgr_ss.fself"`.
-   - *Safety constraint:* Any heap pointer must be verified to reside within physical RAM (`0x00000000 .. 0x0fffffff`) before issuing the peek request.
+   - Active process slots have `entry[+8] != 0` (holding a 64-bit pointer to the heap-allocated `Process` object). Word 0 (`+0x00`) holds process flags and is `0` for running processes (bit 0 is only set during exit/teardown).
+   - In Evilnat 4.93, Slot 3 corresponds to `sysmgr_ss.fself` (spawned resident by `pme_init.conf` command `boot sysmgr_ss.fself nosync`; slot 0 is kernel root, slots 1 and 2 exited after boot). Live peek revealed `Process* = 0x12c010`.
+   - Query: `GET http://192.168.0.169/peek.lv1?3727d0`
+   - Retrieves authoritative hypervisor RAM limits (`RamBase` and `RamLimit`) to govern all subsequent pointer validations.
 
-### Stage 2: Target Timing Anchors (COMPUTED RESOLUTION)
+### Stage 1b: Bounds-Checked Domain & Page Resolution — CONDITIONAL & GATED
+1. **Target address:** Dynamic pointer traversal starting from Slot 3 `Process*` (`0x12c010`).
+2. **Strict safety gates (Zero scanning, bounds-checked dereferencing):**
+   - **Gate 1 (Process pointer bounds):** Check that `0x12c010` lies strictly within `[RamBase, RamLimit - 0x100]`. If outside, HALT.
+   - **Gate 2 (Domain pointer bounds):** Query `GET /peek.lv1?12c010` to read `Process` fields. Offset `+0x20` contains `domain` (`AddressProtectionDomain*`). Check that `domain` lies strictly within `[RamBase, RamLimit - 0x100]`. If outside, HALT.
+   - **Gate 3 (Domain vtable verification):** Query `GET /peek.lv1?<domain>` to read the first 16 bytes of the domain object. Word 0 (`domain + 0x00`) MUST equal `0x00000000003602b8` (the static compiled vtable for `AddressProtectionDomain` in LV1 4.93). If it does not match, HALT immediately.
+   - **Gate 4 (PageNode list traversal):** Offset `domain + 0x58` contains the head pointer to the mapped page list (`PageNode*`). For each node:
+     - Verify `node` lies strictly within `[RamBase, RamLimit - 0x20]`.
+     - Read `PageNode` (16 bytes): `+0x00` is physical address (`paddr`), `+0x08` is user virtual address (`vaddr`), `+0x10` is next pointer.
+     - Record `paddr` when `vaddr == 0x80000000` (`PhysBase_Text`).
+     - Record `paddr` when `vaddr == 0xc0000000` (`PhysBase_Data`).
+   - If both segment bases are found and verified within `[RamBase, RamLimit]`, Stage 1b succeeds.
+
+### Stage 2: Target Timing Anchors — COMPUTED RESOLUTION
 1. **Target addresses:** Computed from discovered physical segment bases (`PhysBase_Text` and `PhysBase_Data`):
    - **Metadata identity anchor:** `PhysBase_Text + 0x39160` (16 bytes, two 64-bit words).
    - **Raster identity anchor:** `PhysBase_Text + 0x38b60` (16 bytes, two 64-bit words).
@@ -123,7 +144,7 @@ Based on the static hypervisor loader analysis documented in `docs/LV1_SYSMGR_SS
    - Raster anchor: Word 0 = `0x00000b3f00000d67`, Word 1 = `0x00000b7f00000c77`, SHA-256 = `381678f339e524cd406d4e8545bbdf36c6b8aad426acc497f71f92f7268ec57e`.
    - Encoder anchor: Word 0 = `0x91003000313f3201`, Word 1 = `0x3302340035003600`, SHA-256 = `8a13e9ec965d86a1bc81cd706dfa2bfd9f0fbcf0234e3b7b25425e2ff7f3c455`.
 3. **Safety STOP condition:**
-   - If `PhysBase_Text` or `PhysBase_Data` cannot be statically or deterministically verified within ordinary RAM, Stage 2 peeks MUST NOT be attempted. Memory scanning is strictly prohibited.
+   - If `PhysBase_Text` or `PhysBase_Data` cannot be deterministically verified through Stage 1b, Stage 2 peeks MUST NOT be attempted. Memory scanning is strictly prohibited.
 
 ## Result (run by the orchestrator on 2026-11-01, owner approved; read-only GET requests; Evilnat 4.93 + webMAN MOD)
 

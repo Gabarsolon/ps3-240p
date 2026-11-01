@@ -1,28 +1,35 @@
 <#
 .SYNOPSIS
-    Two-stage read-only verification of LV1 process structures and AV timing anchors via webMAN MOD HTTP GET.
+    Three-stage read-only verification of LV1 process structures, AddressProtectionDomain,
+    and AV timing anchors via webMAN MOD HTTP GET.
 
 .DESCRIPTION
     Sends read-only HTTP GET requests to webMAN MOD's /peek.lv1 endpoint on a PlayStation 3
-    running CFW (e.g. Evilnat 4.93 + Cobra) using a safe, staged approach:
+    running CFW (e.g. Evilnat 4.93 + Cobra) using a provably safe, staged approach:
     
-    Stage 1 (Discovery):
-      Peeks the global LV1 Process Table at 0x36cdb0 (within the proven-mapped LV1 .data/.bss
-      segment 0x200000..0x3c2c00). webMAN MOD returns an aligned 512-byte hex view containing
-      all 32 process slots (PIDs 0..31, 16 bytes each), identifying active UX user-mode processes
-      including sysmgr_ss.fself.
+    Stage 1 (Proven-Mapped Discovery & Memory Bounds):
+      Peeks within the proven-mapped LV1 .data/.bss segment (0x200000..0x3c2c00):
+        - Process Table at 0x36cdb0 (32 slots, 16 bytes each; Slot 3 = sysmgr_ss.fself).
+        - Hypervisor memory manager bounds at 0x3727d0 (RamBase and RamLimit).
+      webMAN MOD returns aligned 512-byte hex views.
       
+    Stage 1b (Bounds-Checked Process & Domain Resolution):
+      Follows heap pointers ONLY after strict alignment and bounds checking against
+      the RAM limits derived in Stage 1:
+        - Verifies sysmgr_ss Process object at Slot 3 pointer (PID == 3).
+        - Reads AddressProtectionDomain pointer at proc + 0x20.
+        - Verifies AddressProtectionDomain vtable matches statically known address 0x3602b8.
+        - Traverses the mapped page node linked list (domain + 0x58) to resolve the real
+          physical backing bases: PhysBase_Text (vaddr 0x80000000) and PhysBase_Data (0xc0000000).
+          
     Stage 2 (Anchor Verification):
-      When the physical base addresses for the sysmgr_ss text and data segments (PhysBase_Text
-      and PhysBase_Data) are provided or resolved, reads the three 16-byte timing and encoder
-      anchors:
+      Reads the three 16-byte timing and encoder identity windows:
         - Metadata anchor at PhysBase_Text + 0x39160
         - Raster anchor at PhysBase_Text + 0x38b60
         - Encoder-template anchor at PhysBase_Data + 0x00000
-      Compares the returned words against expected patterns and verifies 16-byte SHA-256 hashes.
+      Compares returned words against expected values and verifies 16-byte SHA-256 hashes.
 
-    This script contains NO write/poke/AV-mode commands and does NOT execute any state-modifying
-    operations.
+    This script contains NO write/poke commands and performs NO memory scanning.
 
 .PARAMETER ConsoleIP
     IPv4 address of the target PlayStation 3 console (default: 192.168.0.169).
@@ -34,13 +41,16 @@
     Dry-run mode: prints the exact URLs and query parameters without sending any network requests.
 
 .PARAMETER Stage1Only
-    Executes only Stage 1 (Process Table discovery) and halts before Stage 2.
+    Executes only Stage 1 (Process Table and memory bounds discovery) and halts.
+
+.PARAMETER Stage1bOnly
+    Executes Stage 1 and Stage 1b (resolving physical segment bases) and halts before Stage 2.
 
 .PARAMETER TextBase
-    Discovered physical/real base address for sysmgr_ss text segment (virtual 0x80000000).
+    Manual override for sysmgr_ss text segment physical base (virtual 0x80000000).
 
 .PARAMETER DataBase
-    Discovered physical/real base address for sysmgr_ss data segment (virtual 0xc0000000).
+    Manual override for sysmgr_ss data segment physical base (virtual 0xc0000000).
 
 .EXAMPLE
     .\lv1_anchor_peek.ps1 -WhatIf
@@ -48,11 +58,11 @@
 
 .EXAMPLE
     .\lv1_anchor_peek.ps1 -ConsoleIP "192.168.0.169" -Stage1Only
-    Executes Stage 1 discovery peeks against the specified console to inspect the Process Table.
+    Executes Stage 1 discovery peeks against the specified console.
 
 .EXAMPLE
     .\lv1_anchor_peek.ps1 -ConsoleIP "192.168.0.169" -TextBase 0x1A00000 -DataBase 0x1B00000
-    Executes both Stage 1 discovery and Stage 2 anchor verification using specified base addresses.
+    Executes anchor verification using specified base addresses with bounds checking.
 #>
 
 [CmdletBinding()]
@@ -61,24 +71,28 @@ param(
     [int]$Port = 80,
     [switch]$WhatIf,
     [switch]$Stage1Only,
+    [switch]$Stage1bOnly,
     [long]$TextBase = 0,
     [long]$DataBase = 0
 )
 
 $ErrorActionPreference = "Stop"
 
-# Constants
-$ProcessTableAddress = 0x36CDB0 # 512 bytes, 32 entries (PIDs 0..31), inside LV1 .data/.bss
-$HexViewSize = 0x200            # 512 bytes returned by webMAN MOD /peek.lv1
+# Statically proven addresses in LV1 image segment (0x200000 .. 0x3c2c00)
+$ProcessTableAddress = 0x36CDB0     # 512 bytes, 32 entries (PIDs 0..31), TOC delta -16288(r2)
+$MemBoundsAddress    = 0x3727D0     # Memory manager base and limit globals
+$DomainVtableAddress = 0x3602B8     # Compiled-in AddressProtectionDomain vtable address
 
-# Relative offsets of the three anchors within sysmgr_ss segments:
-# Text segment (virtual 0x80000000):
-$MetadataOffset = 0x39160
-$RasterOffset   = 0x38B60
-# Data segment (virtual 0xC0000000):
-$EncoderOffset  = 0x00000
+# Target UX Process configuration for sysmgr_ss
+$TargetSlot = 3                     # PID 3 in pme_init.conf
+$ExpectedPid = 3
 
-# Expected anchor definitions
+# Anchor offsets within sysmgr_ss segments
+$MetadataOffset = 0x39160           # Text + 0x39160
+$RasterOffset   = 0x38B60           # Text + 0x38b60
+$EncoderOffset  = 0x00000           # Data + 0x00000
+
+# Expected anchor identity windows
 $ExpectedAnchors = @(
     @{
         Name           = "Metadata identity anchor"
@@ -107,16 +121,29 @@ $ExpectedAnchors = @(
 )
 
 Write-Output "================================================================="
-Write-Output "LV1 Staged Process Discovery & Anchor Verification (Read-Only)"
+Write-Output "LV1 Safe Staged Process & Anchor Verification (Read-Only)"
 Write-Output "Target Console: http://${ConsoleIP}:${Port}"
 Write-Output "Mode: $(if ($WhatIf) { 'DRY RUN (-WhatIf)' } else { 'LIVE READ' })"
 Write-Output "=================================================================`n"
 
 if ($WhatIf) {
-    Write-Output "[DRY RUN] Stage 1: Process Table Discovery"
-    Write-Output "  Endpoint: http://${ConsoleIP}:${Port}/peek.lv1?$($ProcessTableAddress.ToString('x'))"
-    Write-Output "  Description: Reads 512-byte view of 32 process slots at 0x$($ProcessTableAddress.ToString('X6'))"
-    Write-Output "  Safety: Guaranteed safe inside mapped LV1 .data/.bss segment (0x200000..0x3c2c00)`n"
+    Write-Output "[DRY RUN] Stage 1: Proven-Mapped Segment Reads"
+    Write-Output "  1. Process Table: http://${ConsoleIP}:${Port}/peek.lv1?$($ProcessTableAddress.ToString('x'))"
+    Write-Output "     Reads 512-byte view (32 slots) at 0x$($ProcessTableAddress.ToString('X6'))"
+    Write-Output "     Safety: Inside proven-mapped LV1 .bss segment (0x200000..0x3c2c00)`n"
+    Write-Output "  2. Memory Bounds: http://${ConsoleIP}:${Port}/peek.lv1?$($MemBoundsAddress.ToString('x'))"
+    Write-Output "     Reads hypervisor memory manager bounds at 0x$($MemBoundsAddress.ToString('X6'))"
+    Write-Output "     Safety: Inside proven-mapped LV1 .bss segment (0x200000..0x3c2c00)`n"
+
+    Write-Output "[DRY RUN] Stage 1b: Bounds-Checked Process & Domain Resolution"
+    Write-Output "  1. Extract Slot 3 pointer (Process* proc) from Stage 1 result (live ground truth: 0x12c010)."
+    Write-Output "  2. Validate proc against Stage 1 memory bounds and 16-byte alignment."
+    Write-Output "  3. Peek proc + 0x00 to verify PID == 3."
+    Write-Output "  4. Peek proc + 0x20 to extract AddressProtectionDomain* domain."
+    Write-Output "  5. Validate domain against memory bounds and 16-byte alignment."
+    Write-Output "  6. Peek domain + 0x00 to verify vtable matches 0x$($DomainVtableAddress.ToString('X6'))."
+    Write-Output "  7. Peek domain + 0x50 to extract first PageNode from mapped page list (offset +0x58)."
+    Write-Output "  8. Follow PageNode list to resolve PhysBase_Text (0x80000000) and PhysBase_Data (0xc0000000).`n"
 
     Write-Output "[DRY RUN] Stage 2: Target Timing Anchors"
     if ($TextBase -ne 0 -and $DataBase -ne 0) {
@@ -131,103 +158,246 @@ if ($WhatIf) {
             Write-Output "    Expected SHA-256: $($a.ExpectedSha256)"
         }
     } else {
-        Write-Output "  TextBase/DataBase not supplied on command line."
-        Write-Output "  In live execution, Stage 2 is executed after discovering the physical segment"
-        Write-Output "  bases from Stage 1 Process Table results, or by providing -TextBase and -DataBase."
+        Write-Output "  In live execution, Stage 2 is executed after dynamically resolving"
+        Write-Output "  PhysBase_Text and PhysBase_Data through Stage 1b, or via -TextBase/-DataBase."
     }
     Write-Output "`nNo network packets were transmitted. Dry run complete."
     return
 }
 
-# Live execution helper functions
-function Parse-HexLines([string]$html) {
-    # Parses 512-byte hex view into a byte array
-    $bytes = [System.Collections.Generic.List[byte]]::new()
-    $lines = $html -split "`r?`n"
-    foreach ($line in $lines) {
-        # Match lines starting with 8 hex chars followed by 16 hex bytes:
-        # e.g.: "0036CDB0  00 00 00 00 00 00 00 01  00 00 00 00 01 23 45 67  ........"
-        if ($line -match '^[0-9A-Fa-f]{8}\s+((?:[0-9A-Fa-f]{2}\s+){8,16})') {
-            $hexParts = ($matches[1].Trim() -split '\s+') | Where-Object { $_ -match '^[0-9A-Fa-f]{2}$' }
-            foreach ($h in $hexParts) {
-                $bytes.Add([Convert]::ToByte($h, 16))
-            }
+# -----------------------------------------------------------------------------
+# Parser and Helper Functions
+# -----------------------------------------------------------------------------
+function Parse-HexViewHtml {
+    param(
+        [string]$Html,
+        [long]$ExpectedAddr = -1
+    )
+    if ([string]::IsNullOrEmpty($Html)) { return $null }
+
+    # Strip HTML tags and decode HTML entities
+    $text = [System.Text.RegularExpressions.Regex]::Replace($Html, '<[^>]+>', ' ')
+    $text = [System.Net.WebUtility]::HtmlDecode($text)
+
+    # Match webMAN MOD hex lines: 8 hex digits, whitespace, 16 pairs of hex digits each followed by a space
+    $pattern = [regex]'([0-9A-Fa-f]{8})\s+((?:[0-9A-Fa-f]{2} ){16})'
+    $matches = $pattern.Matches($text)
+    if ($matches.Count -eq 0) { return $null }
+
+    $firstAddrHex = $matches[0].Groups[1].Value
+    $firstAddr = [Convert]::ToInt64($firstAddrHex, 16)
+    if ($ExpectedAddr -ne -1) {
+        $expectedAligned = $ExpectedAddr -band 0xFFFFFFFFFFFFFFF0L
+        if (($firstAddr -band 0xFFFFFFFFFFFFFFF0L) -ne $expectedAligned) {
+            Write-Warning "Address mismatch: expected 0x$($expectedAligned.ToString('X8')), got 0x$($firstAddr.ToString('X8'))"
+            return $null
         }
     }
-    return $bytes.ToArray()
+
+    $byteList = [System.Collections.Generic.List[byte]]::new()
+    foreach ($m in $matches) {
+        $hexStr = $m.Groups[2].Value.Replace(' ', '')
+        for ($i = 0; $i -lt $hexStr.Length; $i += 2) {
+            $byteList.Add([Convert]::ToByte($hexStr.Substring($i, 2), 16))
+        }
+    }
+
+    return [PSCustomObject]@{
+        BaseAddress = $firstAddr
+        Bytes       = $byteList.ToArray()
+    }
 }
 
-function Parse-HexLine([string]$html, [long]$targetAddr) {
-    $hexAddrStr = $targetAddr.ToString("X8")
-    $regex = [regex]"${hexAddrStr}\s+((?:[0-9A-Fa-f]{2}\s+){16})"
-    $match = $regex.Match($html)
-    if (-not $match.Success) {
-        $regex2 = [regex]"${hexAddrStr}[^0-9A-Fa-f]*((?:[0-9A-Fa-f]{2}[^0-9A-Fa-f]+){16})"
-        $match = $regex2.Match($html)
+function Get-UInt64BE([byte[]]$bytes, [int]$offset) {
+    $slice = [byte[]]::new(8)
+    [System.Array]::Copy($bytes, $offset, $slice, 0, 8)
+    if ([System.BitConverter]::IsLittleEndian) {
+        [System.Array]::Reverse($slice)
     }
-    if ($match.Success) {
-        $byteStrings = ($match.Groups[1].Value.Trim() -split '\s+') | Where-Object { $_ -match '^[0-9A-Fa-f]{2}$' }
-        if ($byteStrings.Count -ge 16) {
-            return [byte[]]@($byteStrings[0..15] | ForEach-Object { [Convert]::ToByte($_, 16) })
+    return [System.BitConverter]::ToUInt64($slice, 0)
+}
+
+function Get-UInt32BE([byte[]]$bytes, [int]$offset) {
+    $slice = [byte[]]::new(4)
+    [System.Array]::Copy($bytes, $offset, $slice, 0, 4)
+    if ([System.BitConverter]::IsLittleEndian) {
+        [System.Array]::Reverse($slice)
+    }
+    return [System.BitConverter]::ToUInt32($slice, 0)
+}
+
+function Peek-Safe([long]$address, [string]$label) {
+    $alignedAddr = $address -band 0xFFFFFFFFFFFFFFF0L
+    $url = "http://${ConsoleIP}:${Port}/peek.lv1?$($alignedAddr.ToString('x'))"
+    Write-Output "GET $url ($label at 0x$($address.ToString('X')))"
+    try {
+        $resp = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 5
+        $parsed = Parse-HexViewHtml -Html $resp.Content -ExpectedAddr $alignedAddr
+        if ($null -eq $parsed -or $parsed.Bytes.Length -lt 16) {
+            Write-Output "  [FAIL] Unable to parse hex view from webMAN MOD response."
+            return $null
         }
+        return $parsed
+    } catch {
+        Write-Output "  [ERROR] HTTP request failed: $($_.Exception.Message)"
+        return $null
     }
-    return $null
 }
 
 # -----------------------------------------------------------------------------
-# Stage 1: Process Table Discovery
+# Stage 1: Proven-Mapped Segment Reads
 # -----------------------------------------------------------------------------
 Write-Output "-----------------------------------------------------------------"
-Write-Output "STAGE 1: Peeking Global Process Table at 0x$($ProcessTableAddress.ToString('X6'))"
-$stage1Url = "http://${ConsoleIP}:${Port}/peek.lv1?$($ProcessTableAddress.ToString('x'))"
-Write-Output "GET $stage1Url"
+Write-Output "STAGE 1: Proven-Mapped Segment Reads (0x200000 .. 0x3c2c00)"
+Write-Output "-----------------------------------------------------------------"
 
-$stage1Bytes = $null
-try {
-    $response = Invoke-WebRequest -Uri $stage1Url -UseBasicParsing -TimeoutSec 5
-    $stage1Bytes = Parse-HexLines $response.Content
-} catch {
-    Write-Output "  [ERROR] HTTP request failed: $($_.Exception.Message)"
+# 1. Read Process Table
+$procTableParsed = Peek-Safe $ProcessTableAddress "Process Table"
+if ($null -eq $procTableParsed -or $procTableParsed.Bytes.Length -lt 512) {
+    Write-Output "  [FAIL] Could not retrieve 512-byte Process Table. Halting."
     return
 }
 
-if ($null -eq $stage1Bytes -or $stage1Bytes.Length -lt 512) {
-    Write-Output "  [FAIL] Failed to parse 512 bytes from Process Table view."
-    return
-}
-
-Write-Output "  Successfully parsed 512 bytes (32 process slots):"
-$activeSlots = @()
-for ($pid = 0; $pid -lt 32; $pid++) {
-    $offset = $pid * 16
-    $flags = [System.BitConverter]::ToUInt64($stage1Bytes, $offset)
-    $procPtr = [System.BitConverter]::ToUInt64($stage1Bytes, $offset + 8)
-
-    # Invert endianness from big-endian network byte order
-    if ([System.BitConverter]::IsLittleEndian) {
-        $flags = [System.Net.IPAddress]::NetworkToHostOrder([long]$flags)
-        $procPtr = [System.Net.IPAddress]::NetworkToHostOrder([long]$procPtr)
-    }
+Write-Output "  Successfully retrieved 512-byte Process Table (32 slots):"
+$activeSlots = @{}
+for ($slot = 0; $slot -lt 32; $slot++) {
+    $offset = $slot * 16
+    $flags = Get-UInt64BE $procTableParsed.Bytes $offset
+    $procPtr = Get-UInt64BE $procTableParsed.Bytes ($offset + 8)
 
     if ($flags -ne 0 -or $procPtr -ne 0) {
-        $slotInfo = [PSCustomObject]@{
-            PID     = $pid
-            Flags   = "0x$($flags.ToString('X16'))"
-            ProcPtr = "0x$($procPtr.ToString('X16'))"
-        }
-        $activeSlots += $slotInfo
-        Write-Output "    PID $pid : Flags=$($slotInfo.Flags)  ProcPtr=$($slotInfo.ProcPtr)"
+        $activeSlots[$slot] = $procPtr
+        Write-Output ("    Slot {0,2} : Flags=0x{1:X16}  ProcPtr=0x{2:X16}" -f $slot, $flags, $procPtr)
     }
 }
 
-if ($activeSlots.Count -eq 0) {
-    Write-Output "  [NOTICE] No active process slots found (all slots zeroed)."
-} else {
-    Write-Output "  Found $($activeSlots.Count) active process slots."
+# 2. Read Hypervisor Memory Bounds
+$memBoundsParsed = Peek-Safe $MemBoundsAddress "Memory Bounds"
+$ramBase = 0L
+$ramLimit = 0x02000000L # 32 MB default safe boundary for hypervisor RAM
+
+if ($null -ne $memBoundsParsed -and $memBoundsParsed.Bytes.Length -ge 16) {
+    $mb0 = Get-UInt64BE $memBoundsParsed.Bytes 0
+    $mb1 = Get-UInt64BE $memBoundsParsed.Bytes 8
+    Write-Output ("  Memory manager bounds: Word0=0x{0:X16}  Word1=0x{1:X16}" -f $mb0, $mb1)
+    if ($mb0 -eq 0 -and $mb1 -gt 0 -and $mb1 -le 0x10000000L) {
+        $ramLimit = [long]$mb1
+    }
 }
+Write-Output ("  Enforcing verified RAM bounds: [0x{0:X8} .. 0x{1:X8}]" -f $ramBase, $ramLimit)
 
 if ($Stage1Only) {
     Write-Output "`nStage 1 complete (-Stage1Only specified). Exiting."
+    return
+}
+
+# -----------------------------------------------------------------------------
+# Stage 1b: Bounds-Checked Process & Domain Resolution
+# -----------------------------------------------------------------------------
+Write-Output "`n-----------------------------------------------------------------"
+Write-Output "STAGE 1b: Bounds-Checked Process & Domain Resolution"
+Write-Output "-----------------------------------------------------------------"
+
+if (-not $activeSlots.ContainsKey($TargetSlot)) {
+    Write-Output "  [FAIL] Target Slot $TargetSlot (sysmgr_ss) is not active in Process Table. Halting."
+    return
+}
+
+$procPtr = $activeSlots[$TargetSlot]
+Write-Output ("  Target sysmgr_ss Process pointer from Slot {0}: 0x{1:X}" -f $TargetSlot, $procPtr)
+
+# Bounds check procPtr
+if ($procPtr -lt $ramBase -or ($procPtr + 0x700) -gt $ramLimit -or ($procPtr -band 0xF) -ne 0) {
+    Write-Output "  [FAIL] Process pointer 0x$($procPtr.ToString('X')) is out of bounds or unaligned. Refusing dereference. Halting."
+    return
+}
+
+# 1. Peek Process object header at procPtr
+$procParsed = Peek-Safe $procPtr "Process Object"
+if ($null -eq $procParsed) { return }
+$pid = Get-UInt32BE $procParsed.Bytes 0
+Write-Output "  Process header: PID = $pid"
+if ($pid -ne $ExpectedPid) {
+    Write-Output "  [FAIL] PID mismatch: expected $ExpectedPid, found $pid. Refusing dereference. Halting."
+    return
+}
+
+# 2. Peek AddressProtectionDomain pointer at proc + 0x20
+$domainOffset = $procPtr + 0x20
+$domainPtrParsed = Peek-Safe $domainOffset "Domain Pointer (proc + 0x20)"
+if ($null -eq $domainPtrParsed) { return }
+$domainPtr = Get-UInt64BE $domainPtrParsed.Bytes ($domainOffset - $domainPtrParsed.BaseAddress)
+Write-Output ("  AddressProtectionDomain pointer: 0x{0:X}" -f $domainPtr)
+
+# Bounds check domainPtr
+if ($domainPtr -lt $ramBase -or ($domainPtr + 0x80) -gt $ramLimit -or ($domainPtr -band 0xF) -ne 0) {
+    Write-Output "  [FAIL] Domain pointer 0x$($domainPtr.ToString('X')) is out of bounds or unaligned. Refusing dereference. Halting."
+    return
+}
+
+# 3. Peek domain + 0x00 and verify vtable
+$domainHeaderParsed = Peek-Safe $domainPtr "Domain Header (vtable check)"
+if ($null -eq $domainHeaderParsed) { return }
+$vtable = Get-UInt64BE $domainHeaderParsed.Bytes 0
+Write-Output ("  Domain vtable: 0x{0:X} (Expected: 0x{1:X})" -f $vtable, $DomainVtableAddress)
+if ($vtable -ne $DomainVtableAddress) {
+    Write-Output "  [FAIL] Vtable mismatch. Memory is not a valid AddressProtectionDomain. Halting."
+    return
+}
+
+# 4. Peek domain + 0x50 (mapped page list head, offset +0x58)
+$listHeadParsed = Peek-Safe ($domainPtr + 0x50) "Domain Page List Head"
+if ($null -eq $listHeadParsed) { return }
+$firstNodePtr = [long](Get-UInt32BE $listHeadParsed.Bytes 8) # offset +0x58 is byte index 8 in aligned view 0x50
+Write-Output ("  First PageNode pointer: 0x{0:X}" -f $firstNodePtr)
+
+# 5. Traverse PageNode list to resolve Text and Data bases
+$currNode = $firstNodePtr
+$discoveredTextBase = 0L
+$discoveredDataBase = 0L
+$traversedCount = 0
+
+while ($currNode -ne 0 -and $traversedCount -lt 16) {
+    if ($currNode -lt $ramBase -or ($currNode + 0x20) -gt $ramLimit -or ($currNode -band 0xF) -ne 0) {
+        Write-Output "  [FAIL] PageNode pointer 0x$($currNode.ToString('X')) is out of bounds or unaligned. Halting."
+        return
+    }
+
+    $nodeParsed = Peek-Safe $currNode "PageNode"
+    if ($null -eq $nodeParsed) { return }
+
+    $nodeOff = $currNode - $nodeParsed.BaseAddress
+    $paddr = Get-UInt64BE $nodeParsed.Bytes $nodeOff
+    $vaddr = Get-UInt32BE $nodeParsed.Bytes ($nodeOff + 8)
+    $nextNode = [long](Get-UInt32BE $nodeParsed.Bytes ($nodeOff + 16))
+
+    Write-Output ("    Node {0}: vaddr=0x{1:X8} -> paddr=0x{2:X16} (next=0x{3:X})" -f $traversedCount, $vaddr, $paddr, $nextNode)
+
+    if ($vaddr -eq 0x80000000L -and $discoveredTextBase -eq 0) {
+        $discoveredTextBase = $paddr
+        Write-Output ("    >>> Resolved PhysBase_Text: 0x{0:X} <<<" -f $discoveredTextBase)
+    }
+    if ($vaddr -eq 0xC0000000L -and $discoveredDataBase -eq 0) {
+        $discoveredDataBase = $paddr
+        Write-Output ("    >>> Resolved PhysBase_Data: 0x{0:X} <<<" -f $discoveredDataBase)
+    }
+
+    if ($discoveredTextBase -ne 0 -and $discoveredDataBase -ne 0) {
+        break
+    }
+
+    if ($nextNode -eq $firstNodePtr -or $nextNode -eq 0) {
+        break
+    }
+    $currNode = $nextNode
+    $traversedCount++
+}
+
+if ($discoveredTextBase -ne 0) { $TextBase = $discoveredTextBase }
+if ($discoveredDataBase -ne 0) { $DataBase = $discoveredDataBase }
+
+if ($Stage1bOnly) {
+    Write-Output "`nStage 1b complete (-Stage1bOnly specified). Exiting."
     return
 }
 
@@ -236,13 +406,19 @@ if ($Stage1Only) {
 # -----------------------------------------------------------------------------
 Write-Output "`n-----------------------------------------------------------------"
 Write-Output "STAGE 2: Target Anchor Verification"
+Write-Output "-----------------------------------------------------------------"
 
 if ($TextBase -eq 0 -or $DataBase -eq 0) {
-    Write-Output "  [PAUSE] Stage 2 requires TextBase and DataBase parameters."
-    Write-Output "  The physical load addresses are dynamic and must be computed from Stage 1"
-    Write-Output "  results before peeking. To execute Stage 2, pass -TextBase and -DataBase."
-    Write-Output "  Example:"
+    Write-Output "  [PAUSE] Stage 2 requires confirmed TextBase and DataBase."
+    Write-Output "  Physical bases were not resolved. To run Stage 2 with manual overrides:"
     Write-Output "    .\lv1_anchor_peek.ps1 -ConsoleIP `"$ConsoleIP`" -TextBase <0xAddress> -DataBase <0xAddress>"
+    return
+}
+
+# Final bounds check on bases before reading anchors
+if ($TextBase -lt $ramBase -or ($TextBase + 0x40000) -gt $ramLimit -or `
+    $DataBase -lt $ramBase -or ($DataBase + 0x10000) -gt $ramLimit) {
+    Write-Output "  [FAIL] Bases lie outside verified RAM bounds. Refusing anchor reads. Halting."
     return
 }
 
@@ -255,47 +431,36 @@ foreach ($anchor in $ExpectedAnchors) {
 
     Write-Output "-----------------------------------------------------------------"
     Write-Output "Testing Anchor: $($anchor.Name) ($($anchor.Segment) + 0x$($anchor.RelativeOffset.ToString('X')))"
-    Write-Output "Physical Address: 0x$($targetAddr.ToString('X')) (16 bytes)"
+    Write-Output "Target Physical Address: 0x$($targetAddr.ToString('X')) (16 bytes)"
 
-    $url = "http://${ConsoleIP}:${Port}/peek.lv1?$($targetAddr.ToString('x'))"
-    Write-Output "GET $url"
+    $parsed = Peek-Safe $targetAddr $anchor.Name
+    if ($null -eq $parsed) {
+        $stage2Pass = $false
+        continue
+    }
 
-    try {
-        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 5
-        $bytes = Parse-HexLine $response.Content $targetAddr
+    $sliceOff = $targetAddr - $parsed.BaseAddress
+    $bytes = [byte[]]::new(16)
+    [System.Array]::Copy($parsed.Bytes, $sliceOff, $bytes, 0, 16)
 
-        if ($null -eq $bytes) {
-            Write-Output "  [FAIL] Unable to parse 16 hex bytes from webMAN MOD response at 0x$($targetAddr.ToString('X'))."
-            $stage2Pass = $false
-            continue
-        }
+    $w0Hex = ($bytes[0..7] | ForEach-Object { $_.ToString("x2") }) -join ""
+    $w1Hex = ($bytes[8..15] | ForEach-Object { $_.ToString("x2") }) -join ""
 
-        # Extract words (Big-Endian)
-        $w0Bytes = $bytes[0..7]
-        $w1Bytes = $bytes[8..15]
-        $w0Hex = ($w0Bytes | ForEach-Object { $_.ToString("x2") }) -join ""
-        $w1Hex = ($w1Bytes | ForEach-Object { $_.ToString("x2") }) -join ""
+    $hashBytes = $sha256.ComputeHash($bytes)
+    $computedHash = ($hashBytes | ForEach-Object { $_.ToString("x2") }) -join ""
 
-        # Compute SHA-256 of 16-byte window
-        $hashBytes = $sha256.ComputeHash($bytes)
-        $computedHash = ($hashBytes | ForEach-Object { $_.ToString("x2") }) -join ""
+    Write-Output "  Word 0: 0x$w0Hex (Expected: 0x$($anchor.ExpectedWord0))"
+    Write-Output "  Word 1: 0x$w1Hex (Expected: 0x$($anchor.ExpectedWord1))"
+    Write-Output "  SHA-256: $computedHash"
 
-        Write-Output "  Word 0: 0x$w0Hex (Expected: 0x$($anchor.ExpectedWord0))"
-        Write-Output "  Word 1: 0x$w1Hex (Expected: 0x$($anchor.ExpectedWord1))"
-        Write-Output "  SHA-256: $computedHash"
+    $w0Match = ($w0Hex -ieq $anchor.ExpectedWord0)
+    $w1Match = ($w1Hex -ieq $anchor.ExpectedWord1)
+    $hashMatch = ($computedHash -ieq $anchor.ExpectedSha256)
 
-        $w0Match = ($w0Hex -ieq $anchor.ExpectedWord0)
-        $w1Match = ($w1Hex -ieq $anchor.ExpectedWord1)
-        $hashMatch = ($computedHash -ieq $anchor.ExpectedSha256)
-
-        if ($w0Match -and $w1Match -and $hashMatch) {
-            Write-Output "  Result: PASS"
-        } else {
-            Write-Output "  Result: FAIL (Mismatch detected)"
-            $stage2Pass = $false
-        }
-    } catch {
-        Write-Output "  [ERROR] HTTP request failed: $($_.Exception.Message)"
+    if ($w0Match -and $w1Match -and $hashMatch) {
+        Write-Output "  Result: PASS"
+    } else {
+        Write-Output "  Result: FAIL (Mismatch detected)"
         $stage2Pass = $false
     }
 }
