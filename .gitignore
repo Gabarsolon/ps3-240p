@@ -1,0 +1,16 @@
+# Sony-derived files and heavy local artifacts never go in git
+*.self
+*.elf
+*.pup
+*.PUP
+*.pkg
+*.bin
+*.7z
+*.zip
+local_only/
+__pycache__/
+*.pyc
+*.log
+*.jsonl
+*.gpr
+*.rep/
