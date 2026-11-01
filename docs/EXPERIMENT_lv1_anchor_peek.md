@@ -73,8 +73,13 @@ The PowerShell test tool is located at `tools/lv1_anchor_peek.ps1`.
 ### Parse verification (offline, assistant-run)
 ```powershell
 $tokens = $null; $errors = $null;
-[System.Management.Automation.Language.Parser]::ParseFile('<home>/ps3-240p/tools/lv1_anchor_peek.ps1', [ref]$tokens, [ref]$errors);
+[void][System.Management.Automation.Language.Parser]::ParseFile('<home>/ps3-240p/tools/lv1_anchor_peek.ps1', [ref]$tokens, [ref]$errors);
 if ($errors.Count -eq 0) { Write-Output "PARSE-CHECK PASS" } else { $errors }
+```
+
+### Offline unit test (offline, assistant-run)
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/lv1_anchor_peek.ps1 -UnitTest
 ```
 
 ### Dry-run verification (offline, assistant-run)
@@ -101,16 +106,18 @@ When ready to test live on the console:
 
 ## Stage plan (three-stage safe dynamic resolution)
 
-Based on the static hypervisor loader and boot configuration analysis documented in `docs/LV1_SYSMGR_SS_LOADADDR.md`, the live copy of `sysmgr_ss` executes in the isolated UX subsystem with virtual segments at `0x80000000` (text) and `0xc0000000` (data), backed by dynamically allocated physical RAM pages.
+Based on the static hypervisor loader and memory architecture analysis documented in `docs/LV1_SYSMGR_SS_LOADADDR.md`, the live copy of `sysmgr_ss` executes in the isolated UX subsystem with virtual segments at `0x80000000` (text) and `0xc0000000` (data), backed by dynamically allocated physical RAM pages.
 
 Because `UserProgramLoader::load` does not write load addresses to static global variables and no static `AddressProtectionDomain` objects exist in `.bss`, segment load addresses must be resolved via the active process descriptor. To safely locate and verify the active tables without scanning memory or risking machine check exceptions, a three-stage read-only protocol is defined:
 
-### Stage 1: Static .bss Discovery (Process Table & Memory Bounds) — PROVEN SAFE
+### Stage 1: Static .bss Discovery & Heap Bounds Validation — PROVEN SAFE
 1. **Target addresses:**
-   - `0x36cdb0`: Process Table (32 slots, 16 bytes each; 512 bytes total, fits in single `/peek.lv1` request).
-   - `0x3727d0`: Memory Manager global physical RAM boundaries (`RamBase` at `0x3727d0`, `RamLimit` at `0x3727d8`).
+   - `0x36cdb0`: Process Table (32 slots, 16 bytes each; 512 bytes total, fits in a single `/peek.lv1` request).
+   - Global heap/allocator descriptors in proven-mapped image `.bss`:
+     - `0x3725b0`: Primary `buddy_allocator` pointer.
+     - `0x373db0` / `0x373da8`: PME heap reservation cursor and remaining size.
 2. **Safety rationale:**
-   - Both addresses reside strictly within the LV1 image's `.data`/`.bss` segment (`0x200000 .. 0x3c2c00`).
+   - All target addresses reside strictly within the LV1 image's `.data`/`.bss` segment (`0x200000 .. 0x3c2c00`).
    - Control reads of `0x20d060`, `0x32adb0`, and `0x300000` proved this segment is mapped 1:1 and accessible via `/peek.lv1`.
    - webMAN MOD `/peek.lv1` formats an aligned 512-byte view (`HEXVIEW_SIZE = 0x200`), capturing the entire 32-slot table in a single HTTP GET request.
    - Reading static mapped kernel memory carries zero risk of bus faults, MMIO side-effects, or display timing interruption.
@@ -118,21 +125,33 @@ Because `UserProgramLoader::load` does not write load addresses to static global
    - Query: `GET http://192.168.0.169/peek.lv1?36cdb0`
    - Active process slots have `entry[+8] != 0` (holding a 64-bit pointer to the heap-allocated `Process` object). Word 0 (`+0x00`) holds process flags and is `0` for running processes (bit 0 is only set during exit/teardown).
    - In Evilnat 4.93, Slot 3 corresponds to `sysmgr_ss.fself` (spawned resident by `pme_init.conf` command `boot sysmgr_ss.fself nosync`; slot 0 is kernel root, slots 1 and 2 exited after boot). Live peek revealed `Process* = 0x12c010`.
-   - Query: `GET http://192.168.0.169/peek.lv1?3727d0`
-   - Retrieves authoritative hypervisor RAM limits (`RamBase` and `RamLimit`) to govern all subsequent pointer validations.
+4. **Authoritative Heap Bounds & Consistency Sanity Gate:**
+   - Base address: `HvHeapBase = 0x00000000L` (physical DRAM base).
+   - Upper boundary: `HvHeapLimit = 0x02000000L` (32 MB hypervisor partition ceiling; strictly separates LV1 physical heap from GameOS LPAR 1 memory).
+   - **Consistency Check on Known Pointers:**
+     The script validates that the 5 known live `Process*` pointers from ground truth (`0x915d0`, `0xe5040`, `0x12c010`, `0x12c8d0`, `0x6bb0d0`) all satisfy the 512-byte view margin check:
+     `(P & ~0xF) >= HvHeapBase && (P & ~0xF) + 0x200 <= HvHeapLimit`
+     If any known live pointer fails this test, the bound is invalidated and the script HALTS immediately.
 
-### Stage 1b: Bounds-Checked Domain & Page Resolution — CONDITIONAL & GATED
+### Stage 1b: Bounds-Checked Process & Domain Resolution — CONDITIONAL & GATED
 1. **Target address:** Dynamic pointer traversal starting from Slot 3 `Process*` (`0x12c010`).
 2. **Strict safety gates (Zero scanning, bounds-checked dereferencing):**
-   - **Gate 1 (Process pointer bounds):** Check that `0x12c010` lies strictly within `[RamBase, RamLimit - 0x100]`. If outside, HALT.
-   - **Gate 2 (Domain pointer bounds):** Query `GET /peek.lv1?12c010` to read `Process` fields. Offset `+0x20` contains `domain` (`AddressProtectionDomain*`). Check that `domain` lies strictly within `[RamBase, RamLimit - 0x100]`. If outside, HALT.
-   - **Gate 3 (Domain vtable verification):** Query `GET /peek.lv1?<domain>` to read the first 16 bytes of the domain object. Word 0 (`domain + 0x00`) MUST equal `0x00000000003602b8` (the static compiled vtable for `AddressProtectionDomain` in LV1 4.93). If it does not match, HALT immediately.
-   - **Gate 4 (PageNode list traversal):** Offset `domain + 0x58` contains the head pointer to the mapped page list (`PageNode*`). For each node:
-     - Verify `node` lies strictly within `[RamBase, RamLimit - 0x20]`.
-     - Read `PageNode` (16 bytes): `+0x00` is physical address (`paddr`), `+0x08` is user virtual address (`vaddr`), `+0x10` is next pointer.
+   - **webMAN View Margin Rule:** For every pointer `ptr` followed, the check enforces that the full 512-byte webMAN MOD view window `[ptr & ~0xF .. (ptr & ~0xF) + 0x200)` lies strictly inside `[HvHeapBase, HvHeapLimit)`.
+   - **Gate 1 (Process pointer bounds):** Check `(0x12c010 & ~0xF) >= HvHeapBase && (0x12c010 & ~0xF) + 0x200 <= HvHeapLimit`. If outside, HALT.
+   - **Gate 2 (Process header verification):** Query `GET /peek.lv1?12c010` to read `Process` fields. Offset `+0x00` (uint32) MUST equal `3` (PID for `sysmgr_ss`). If mismatch, HALT immediately.
+   - **Gate 3 (Domain pointer extraction & view bounds):** Extract `domain` (`AddressProtectionDomain*`) from `Process + 0x18`.
+     Verify `domain != 0`, `(domain & 0x7) == 0`, and `(domain & ~0xF) >= HvHeapBase && (domain & ~0xF) + 0x200 <= HvHeapLimit`. If invalid, HALT.
+   - **Gate 4 (Domain vtable verification):** Query `GET /peek.lv1?<domain>`. Word 0 (`domain + 0x00`) MUST equal compile-time vtable `0x000000000035ecb8`. If mismatch, HALT immediately.
+   - **Gate 5 (ProtectionPage list traversal):** Read first page node pointer from `domain + 0x3c` (uint32). Sentinel list head is at `domain + 0x28`. For each node:
+     - Check view bounds: `(node & ~0xF) >= HvHeapBase && (node & ~0xF) + 0x200 <= HvHeapLimit`.
+     - Read node (size 0x20 bytes):
+       - `+0x00` (uint64): backing physical address `paddr`.
+       - `+0x08` (uint32): user virtual address `vaddr`.
+       - `+0x14` (uint32): next node pointer `next`.
      - Record `paddr` when `vaddr == 0x80000000` (`PhysBase_Text`).
      - Record `paddr` when `vaddr == 0xc0000000` (`PhysBase_Data`).
-   - If both segment bases are found and verified within `[RamBase, RamLimit]`, Stage 1b succeeds.
+     - Stop traversing when `next == (domain + 0x28)` or `next == 0`.
+   - If both segment bases are found and verified within `[HvHeapBase, HvHeapLimit)`, Stage 1b succeeds.
 
 ### Stage 2: Target Timing Anchors — COMPUTED RESOLUTION
 1. **Target addresses:** Computed from discovered physical segment bases (`PhysBase_Text` and `PhysBase_Data`):
