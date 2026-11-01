@@ -162,3 +162,8 @@ Because `UserProgramLoader::load` does not write load addresses to static global
 - The read worked (no fault); the stage-1 script's own parser failed on the page, so the view was parsed separately.
 - **The layout predicted by the static analysis did not match.** The 512-byte view has NO entries with a `1` flag at +0x00. Slots hold zero in the first word; the second word is non-zero only in five of the 32 slots: slot 0 = `0x6bb0d0`, slot 3 = `0x12c010`, slot 5 = `0x915d0`, slot 6 = `0xe5040`, slot 10 = `0x12c8d0`. Those look like pointers into low RAM / the heap, but what the table is, and whether these are process descriptors, is UNKNOWN.
 - Stage 1b (following a pointer) and stage 2 were NOT done: the premise "active slots are flagged and point to Process objects" is not confirmed, and the claim that the whole range `0..0x0fffffff` is safe to read is not proven.
+
+## Stage 1 follow-up: read of `0x3727d0` (run by the orchestrator on 2026-11-01, owner approved)
+
+- The read worked (no fault). The first eight words were `0x6047e0, 0x604800, 0x604840, 0x604870, 0x600200, 0x6042b0, 0x604260, 0x6046c0`.
+- **These are NOT the RAM base/limit predicted by the static analysis.** `0x6047e0` and `0x604800` differ by 32 bytes, so they cannot be a memory range, and all values look like pointers into the LV1 data/bss area just above the image. The "authoritative RAM bounds" claim for `0x3727d0` is therefore wrong (or the layout differs); stage 1b was NOT run. A trustworthy bound for following heap pointers is still missing.
