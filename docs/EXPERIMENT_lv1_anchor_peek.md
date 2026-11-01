@@ -93,3 +93,14 @@ When ready to test live on the console:
    powershell -ExecutionPolicy Bypass -File tools/lv1_anchor_peek.ps1 -ConsoleIP "192.168.0.169"
    ```
 4. Record the terminal output and return the printed word values, computed SHA-256 hashes, and PASS/FAIL status for each anchor.
+
+## Result (run by the orchestrator on 2026-11-01, owner approved; read-only GET requests; Evilnat 4.93 + webMAN MOD)
+
+**The planned anchors FAILED, and the cause is understood (PROVEN by control reads).**
+
+- The three planned 16-byte windows (0x46aea0, 0x46a8a0, 0x471d40) read as all zero on the live console.
+- Control reads prove the method works: the script's peeks of addresses in the LV1 text and data segments (0x20d060, 0x32adb0, 0x300000) matched the bytes of the local official 4.93 LV1 image exactly (the LV1 image is mapped at its ELF virtual addresses; webMAN `/peek.lv1?<hex>` returns them).
+- The 0x400000..0x5fffff range of the ELF holds the embedded filesystem (including the sysmgr_ss image). On the live console 0x400000, 0x4218c0 (start of the embedded sysmgr_ss file) and all three anchors read zero, while the same bytes are present in the image file. 0x500000 shows different live data than the file. So the embedded filesystem is not resident at those addresses at runtime (INFERRED: LV1 releases or overwrites it after loading the modules).
+- Consequence: the live copy of the AV-manager tables is somewhere else in memory (the sysmgr_ss module runs in its own mapping). Its real address is UNKNOWN. Scanning memory with webMAN's find/search is not safe as an experiment (reads of unmapped addresses can crash the hypervisor), so no scan was done.
+
+**Confirmed for the project:** the anchor values in the file are as predicted (the table bytes at the planned file offsets match this document), so the static analysis of the tables stands; only the live-peek route needs another way to find the loaded copy (for example following LV1's own module-load bookkeeping, found statically in LV1 4.93, to the sysmgr_ss load address).
