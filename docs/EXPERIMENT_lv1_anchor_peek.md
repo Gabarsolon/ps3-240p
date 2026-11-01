@@ -94,6 +94,37 @@ When ready to test live on the console:
    ```
 4. Record the terminal output and return the printed word values, computed SHA-256 hashes, and PASS/FAIL status for each anchor.
 
+## Stage plan (two-stage dynamic resolution)
+
+Based on the static hypervisor loader analysis documented in `docs/LV1_SYSMGR_SS_LOADADDR.md`, the live copy of `sysmgr_ss` executes in the isolated UX subsystem with virtual segments at `0x80000000` (text) and `0xc0000000` (data), backed by dynamically allocated physical RAM pages. To safely locate and verify the active tables without scanning memory or risking machine check exceptions, a two-stage read-only protocol is defined:
+
+### Stage 1: Process Table Discovery (PROVEN SAFE)
+1. **Target address:** `0x36cdb0` (LV1 Process Table).
+2. **Safety rationale:**
+   - Resides strictly within the LV1 image's `.data`/`.bss` segment (`0x200000 .. 0x3c2c00`).
+   - The control reads of `0x20d060`, `0x32adb0`, and `0x300000` proved that this segment is mapped 1:1 and accessible via `/peek.lv1`.
+   - webMAN MOD `/peek.lv1` formats an aligned 512-byte view (`HEXVIEW_SIZE = 0x200`), capturing all 32 process slots (PIDs 0..31, 16 bytes each) in a single HTTP GET request.
+   - Reading ordinary mapped kernel data carries zero risk of bus faults, MMIO side-effects, or display timing interruption.
+3. **Execution & Interpretation:**
+   - Query: `GET http://192.168.0.169/peek.lv1?36cdb0`
+   - Active process slots have flag `0x0000000000000001` at `+0x00` and a non-null pointer `Process *proc` at `+0x08`.
+   - Identifying `sysmgr_ss.fself` (typically PID 2 or 3) gives the process descriptor pointer.
+4. **Process name confirmation (Conditional):**
+   - Dereferencing `proc + 0x638` (`UserProgramLoader*`) and reading the loader's descriptor at offset `+0x240` (16 bytes) confirms the ASCII name string `"sysmgr_ss.fself"`.
+   - *Safety constraint:* Any heap pointer must be verified to reside within physical RAM (`0x00000000 .. 0x0fffffff`) before issuing the peek request.
+
+### Stage 2: Target Timing Anchors (COMPUTED RESOLUTION)
+1. **Target addresses:** Computed from discovered physical segment bases (`PhysBase_Text` and `PhysBase_Data`):
+   - **Metadata identity anchor:** `PhysBase_Text + 0x39160` (16 bytes, two 64-bit words).
+   - **Raster identity anchor:** `PhysBase_Text + 0x38b60` (16 bytes, two 64-bit words).
+   - **Encoder-template anchor:** `PhysBase_Data + 0x00000` (16 bytes, two 64-bit words).
+2. **Expected anchor values (adjusted to discovered base):**
+   - Metadata anchor: Word 0 = `0x426fc28f00000001`, Word 1 = `0x0000000400000b40`, SHA-256 = `d5bfc18bf3510558595e88fe25ededc4306284f90331adaf2fabc68dd753d63f`.
+   - Raster anchor: Word 0 = `0x00000b3f00000d67`, Word 1 = `0x00000b7f00000c77`, SHA-256 = `381678f339e524cd406d4e8545bbdf36c6b8aad426acc497f71f92f7268ec57e`.
+   - Encoder anchor: Word 0 = `0x91003000313f3201`, Word 1 = `0x3302340035003600`, SHA-256 = `8a13e9ec965d86a1bc81cd706dfa2bfd9f0fbcf0234e3b7b25425e2ff7f3c455`.
+3. **Safety STOP condition:**
+   - If `PhysBase_Text` or `PhysBase_Data` cannot be statically or deterministically verified within ordinary RAM, Stage 2 peeks MUST NOT be attempted. Memory scanning is strictly prohibited.
+
 ## Result (run by the orchestrator on 2026-11-01, owner approved; read-only GET requests; Evilnat 4.93 + webMAN MOD)
 
 **The planned anchors FAILED, and the cause is understood (PROVEN by control reads).**
