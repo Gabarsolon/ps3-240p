@@ -1,0 +1,25 @@
+{
+  "title": "PS3 240p / 288p Switcher",
+  "content_id": "UP0001-PS240P001_00-PS3240PSWITCH001",
+  "app_id": "PS240P001",
+  "package": "PS3-240P.pkg",
+  "size_bytes": 152592,
+  "sha256": "5e33443bf53736c28178a744e532e7d829ba69f3c9964470802805a1f43728c9",
+  "files": [
+    {
+      "file": "USRDIR/EBOOT.BIN",
+      "bytes": 140816,
+      "sha256": "b54d6f44d589cfe3fc7c20c228fc249c7fdd69281f4d85d476442734528e290f"
+    },
+    {
+      "file": "PARAM.SFO",
+      "bytes": 1040,
+      "sha256": "eaf9aa88f6d2801327cf30e1cfc2549ef3126056b97681923fa48f1e003c56d7"
+    },
+    {
+      "file": "ICON0.PNG",
+      "bytes": 10091,
+      "sha256": "e7f4840a34e7412d9156576fcdfd8b47462c2caffeb9e84c470bd1acf74ca236"
+    }
+  ]
+}

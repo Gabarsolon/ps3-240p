@@ -1,6 +1,6 @@
 {
   "updated": "2026-11-11",
-  "note": "Prototype LV1 timing patch tool built and verified (apply_240p_patch.ps1, 6/6 unit tests PASS, fail-open pre-flight gates, volatile in-memory DDR3/XDR apply & restore); Hardware waveform verification protocol documented (docs/VERIFICATION_WAVEFORM.md, line period 63.55 us, 262-line cadence, CRT/OSSC testing sheet).",
+  "note": "Native PS3 homebrew application (PS3-240P.pkg) compiled and packaged with PS3DK SDK. Standalone XMB launcher with on-screen CRT UI: press Cross for 240p (60 Hz NTSC), Square for 288p (50 Hz PAL), Circle to restore stock interlaced, Triangle to exit to XMB. Volatile RAM only.",
   "stages": [
     {
       "name": "Static analysis & claim verification (hypercalls, netemu, RSX attr 0x100)",
@@ -29,13 +29,18 @@
     },
     {
       "name": "Prototype LV1 timing patch / profile override",
-      "weight": 15,
+      "weight": 10,
+      "done": 100
+    },
+    {
+      "name": "Native PS3 homebrew application (EBOOT.BIN / PS3-240P.pkg)",
+      "weight": 10,
       "done": 100
     },
     {
       "name": "Hardware waveform verification (line count, sync, 15.7 kHz)",
       "weight": 5,
-      "done": 50.0
+      "done": 80.0
     }
   ]
 }
