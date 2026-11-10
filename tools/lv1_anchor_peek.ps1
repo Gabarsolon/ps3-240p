@@ -100,8 +100,8 @@ $HvHeapLimit = 0x02000000L          # 32 MB hypervisor partition ceiling (GameOS
 $KnownLiveProcessPtrs = @(0x915D0L, 0xE5040L, 0x12C010L, 0x12C8D0L, 0x6BB0D0L)
 
 # Target UX Process configuration for sysmgr_ss
-$TargetSlot = 3                     # PID 3 in pme_init.conf
-$ExpectedPid = 3
+$TargetSlot = 10                     # PID 10 (Slot 10 in 4.93 Evilnat)
+$ExpectedPid = 10
 
 # Anchor offsets within sysmgr_ss segments
 $MetadataOffset = 0x39160           # Text + 0x39160
@@ -229,8 +229,16 @@ function Test-PointerViewBounds {
     return $true
 }
 
+$script:PeekCache = @{}
+
 function Peek-Safe([long]$address, [string]$label) {
     $alignedAddr = $address -band 0xFFFFFFFFFFFFFFF0L
+    foreach ($cachedBase in $script:PeekCache.Keys) {
+        $cachedParsed = $script:PeekCache[$cachedBase]
+        if ($address -ge $cachedBase -and ($address + 32) -le ($cachedBase + $cachedParsed.Bytes.Length)) {
+            return $cachedParsed
+        }
+    }
     $url = "http://${ConsoleIP}:${Port}/peek.lv1?$($alignedAddr.ToString('x'))"
     Write-Output "GET $url ($label at 0x$($address.ToString('X')))"
     try {
@@ -240,6 +248,7 @@ function Peek-Safe([long]$address, [string]$label) {
             Write-Output "  [FAIL] Unable to parse hex view from webMAN MOD response."
             return $null
         }
+        $script:PeekCache[$parsed.BaseAddress] = $parsed
         return $parsed
     } catch {
         Write-Output "  [ERROR] HTTP request failed: $($_.Exception.Message)"
@@ -501,10 +510,10 @@ if (-not (Test-PointerViewBounds -Pointer $procPtr -Base $HvHeapBase -Limit $HvH
 # 1. Peek Process object header at procPtr
 $procParsed = Peek-Safe $procPtr "Process Object"
 if ($null -eq $procParsed) { return }
-$pid = Get-UInt32BE $procParsed.Bytes 0
-Write-Output "  Process header: PID = $pid"
-if ($pid -ne $ExpectedPid) {
-    Write-Output "  [FAIL] PID mismatch: expected $ExpectedPid, found $pid. Refusing dereference. Halting."
+$procPid = Get-UInt32BE $procParsed.Bytes 0
+Write-Output "  Process header: PID = $procPid"
+if ($procPid -ne $ExpectedPid) {
+    Write-Output "  [FAIL] PID mismatch: expected $ExpectedPid, found $procPid. Refusing dereference. Halting."
     return
 }
 
@@ -539,13 +548,14 @@ if ($firstNodePtr -eq 0 -or $firstNodePtr -eq $sentinelHead) {
     return
 }
 
-# 5. Traverse ProtectionPage list to resolve Text and Data bases
+# 5. Traverse ProtectionPage list to map pages and resolve Text and Data bases
 $currNode = $firstNodePtr
 $discoveredTextBase = 0L
 $discoveredDataBase = 0L
+$pageMap = @{}
 $traversedCount = 0
 
-while ($currNode -ne 0 -and $currNode -ne $sentinelHead -and $traversedCount -lt 32) {
+while ($currNode -ne 0 -and $currNode -ne $sentinelHead -and $traversedCount -lt 256) {
     if (-not (Test-PointerViewBounds -Pointer $currNode -Base $HvHeapBase -Limit $HvHeapLimit -Label "PageNodePointer")) {
         Write-Output "  [FAIL] PageNode pointer view span violation. Halting."
         return
@@ -559,24 +569,23 @@ while ($currNode -ne 0 -and $currNode -ne $sentinelHead -and $traversedCount -lt
     $vaddr = [long](Get-UInt32BE $nodeParsed.Bytes ($nodeOff + 8))
     $nextNode = [long](Get-UInt32BE $nodeParsed.Bytes ($nodeOff + 20)) # +0x14 next pointer
 
+    $pageMap[$vaddr] = $paddr
     Write-Output ("    Node {0,2}: vaddr=0x{1:X8} -> paddr=0x{2:X16} (next=0x{3:X})" -f $traversedCount, $vaddr, $paddr, $nextNode)
 
     if ($vaddr -eq 0x80000000L -and $discoveredTextBase -eq 0) {
         $discoveredTextBase = $paddr
-        Write-Output ("    >>> Resolved PhysBase_Text: 0x{0:X} <<<" -f $discoveredTextBase)
+        Write-Output ("    >>> Resolved PhysBase_Text (0x80000000): 0x{0:X} <<<" -f $discoveredTextBase)
     }
     if ($vaddr -eq 0xC0000000L -and $discoveredDataBase -eq 0) {
         $discoveredDataBase = $paddr
-        Write-Output ("    >>> Resolved PhysBase_Data: 0x{0:X} <<<" -f $discoveredDataBase)
-    }
-
-    if ($discoveredTextBase -ne 0 -and $discoveredDataBase -ne 0) {
-        break
+        Write-Output ("    >>> Resolved PhysBase_Data (0xc0000000): 0x{0:X} <<<" -f $discoveredDataBase)
     }
 
     $currNode = $nextNode
     $traversedCount++
 }
+
+Write-Output ("  Total mapped pages resolved in domain: {0}" -f $pageMap.Count)
 
 if ($discoveredTextBase -ne 0) { $TextBase = $discoveredTextBase }
 if ($discoveredDataBase -ne 0) { $DataBase = $discoveredDataBase }
@@ -593,30 +602,29 @@ Write-Output "`n----------------------------------------------------------------
 Write-Output "STAGE 2: Target Anchor Verification"
 Write-Output "-----------------------------------------------------------------"
 
-if ($TextBase -eq 0 -or $DataBase -eq 0) {
-    Write-Output "  [PAUSE] Stage 2 requires confirmed TextBase and DataBase."
-    Write-Output "  Physical bases were not resolved. To run Stage 2 with manual overrides:"
-    Write-Output "    .\lv1_anchor_peek.ps1 -ConsoleIP `"$ConsoleIP`" -TextBase <0xAddress> -DataBase <0xAddress>"
-    return
-}
-
-# Final bounds check on bases before reading anchors
-if (-not (Test-PointerViewBounds -Pointer $TextBase -Base $HvHeapBase -Limit $HvHeapLimit -Label "TextBase") -or `
-    -not (Test-PointerViewBounds -Pointer $DataBase -Base $HvHeapBase -Limit $HvHeapLimit -Label "DataBase")) {
-    Write-Output "  [FAIL] Bases lie outside verified RAM bounds. Refusing anchor reads. Halting."
-    return
-}
-
 $sha256 = [System.Security.Cryptography.SHA256]::Create()
 $stage2Pass = $true
 
 foreach ($anchor in $ExpectedAnchors) {
-    $base = if ($anchor.Segment -eq "Text") { $TextBase } else { $DataBase }
-    $targetAddr = $base + $anchor.RelativeOffset
+    $targetVaddr = if ($anchor.Segment -eq "Text") { 0x80000000L + $anchor.RelativeOffset } else { 0xC0000000L + $anchor.RelativeOffset }
+    $pageVaddr   = $targetVaddr -band 0xFFFFFFFFFFFFF000L
+    $pageOffset  = $targetVaddr -band 0xFFFL
 
     Write-Output "-----------------------------------------------------------------"
     Write-Output "Testing Anchor: $($anchor.Name) ($($anchor.Segment) + 0x$($anchor.RelativeOffset.ToString('X')))"
-    Write-Output "Target Physical Address: 0x$($targetAddr.ToString('X')) (16 bytes)"
+
+    if ($pageMap.ContainsKey($pageVaddr)) {
+        $targetAddr = $pageMap[$pageVaddr] + $pageOffset
+        Write-Output ("  Resolved Virtual 0x{0:X8} via PageMap -> Target Physical Address: 0x{1:X} (16 bytes)" -f $targetVaddr, $targetAddr)
+    } elseif ($TextBase -ne 0 -and $DataBase -ne 0) {
+        $base = if ($anchor.Segment -eq "Text") { $TextBase } else { $DataBase }
+        $targetAddr = $base + $anchor.RelativeOffset
+        Write-Output ("  Fallback to contiguous base + offset -> Physical Address: 0x{0:X} (16 bytes)" -f $targetAddr)
+    } else {
+        Write-Output ("  [FAIL] Target virtual page 0x{0:X8} not found in domain page map. Halting." -f $pageVaddr)
+        $stage2Pass = $false
+        continue
+    }
 
     # View span check on target address
     if (-not (Test-PointerViewBounds -Pointer $targetAddr -Base $HvHeapBase -Limit $HvHeapLimit -Label $anchor.Name)) {

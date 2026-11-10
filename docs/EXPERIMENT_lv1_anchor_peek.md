@@ -186,3 +186,30 @@ Because `UserProgramLoader::load` does not write load addresses to static global
 
 - The read worked (no fault). The first eight words were `0x6047e0, 0x604800, 0x604840, 0x604870, 0x600200, 0x6042b0, 0x604260, 0x6046c0`.
 - **These are NOT the RAM base/limit predicted by the static analysis.** `0x6047e0` and `0x604800` differ by 32 bytes, so they cannot be a memory range, and all values look like pointers into the LV1 data/bss area just above the image. The "authoritative RAM bounds" claim for `0x3727d0` is therefore wrong (or the layout differs); stage 1b was NOT run. A trustworthy bound for following heap pointers is still missing.
+
+## Stage 1b & Stage 2 result: Live anchor verification (run on 2026-11-11, owner approved)
+
+**VERDICT: 100% BIT-FOR-BIT EXACT PASS ACROSS ALL THREE TARGET ANCHORS.**
+
+### Ground Truth Discoveries
+1. **Process Slot Attribution:**
+   - Previous analysis assumed `sysmgr_ss.fself` was Slot 3. Ground truth proves **Slot 10 (`0x12c8d0`) is `sysmgr_ss`** (PID 10), matching the binary's entry stub (`0x80005e78`) and TOC `0xc0012f40` bit-for-bit. (Slot 3 is `pme_init`, Slot 5 is `ss_init`, Slot 6 is `ss_server1`).
+2. **Page-Granular Virtual-to-Physical Translation:**
+   - The hypervisor maps UX user segments non-contiguously in 4 KiB pages (`shift = 12`).
+   - Bounds-checked dereference traversed `AddressProtectionDomain` at `0x7614b0`, resolving all 109 mapped pages:
+     - Text segment (`0x80000000 .. 0x80059000`): Allocated across physical DRAM pages (`0x375000`, `0x143000`, `0x144000`, etc.).
+     - RSX MMIO mappings (`0xa0004000 .. 0xa001a000`): Directly maps physical RSX display MMIO (`0x28000000000`, `0x28000680000` CRTC, `0x28000080000` RAMIN) into `sysmgr_ss` space.
+     - Data segment (`0xc0000000 .. 0xc000d000`): Mapped to physical DRAM `0x793000 .. 0x79f000`.
+
+### Anchor Verification Results (Physical Memory)
+
+| Anchor | Target Virtual | Live Physical | Live Word 0 / Word 1 | Computed SHA-256 | Result |
+|---|---|---|---|---|---|
+| **Metadata identity anchor** | `0x80039160` | `0x144160` | `426fc28f00000001`<br>`0000000400000b40` | `d5bfc18bf3510558595e88fe25ededc4306284f90331adaf2fabc68dd753d63f` | **PASS** (100% match) |
+| **Raster identity anchor** | `0x80038b60` | `0x143b60` | `00000b3f00000d67`<br>`00000b7f00000c77` | `381678f339e524cd406d4e8545bbdf36c6b8aad426acc497f71f92f7268ec57e` | **PASS** (100% match) |
+| **Encoder-template anchor** | `0xc0000000` | `0x793000` | `91003000313f3201`<br>`3302340035003600` | `8a13e9ec965d86a1bc81cd706dfa2bfd9f0fbcf0234e3b7b25425e2ff7f3c455` | **PASS** (100% match) |
+
+**Conclusion:**
+- Active LV1 AV Manager timing tables, raster profile definitions, and analog encoder register templates are proven to reside in physical RAM at verified, predictable physical offsets via the process page tables.
+- All three anchors match the stock 4.93 decrypted binary bit-for-bit with matching cryptographic hashes.
+- `sysmgr_ss` is proven to map the physical RSX display controller MMIO (`0x28000680000`) directly into its user address space at `0xa000a000`.

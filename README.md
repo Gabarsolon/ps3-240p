@@ -13,21 +13,21 @@ Related: [ps2-netemu-disc](https://github.com/Gabarsolon/ps2-netemu-disc) (priva
 <!-- progress:start -->
 ## Progress
 
-![Project progress 58%](docs/progress.svg)
+![Project progress 71%](docs/progress.svg)
 
-**Overall: about 58%** (effort-weighted estimate; the real risk is not evenly spread).
+**Overall: about 71%** (effort-weighted estimate; the real risk is not evenly spread).
 
 | Stage | Weight | Done |
 |---|---:|---|
 | Static analysis & claim verification (hypercalls, netemu, RSX attr 0x100) | 15% | `██████████` 100% |
 | AV-manager timing tables & emulator video path trace | 20% | `██████████` 100% |
 | LV1 process loader & memory architecture modeling | 15% | `██████████` 100% |
-| Live LV1 anchor resolution (sysmgr_ss physical segments) | 15% | `███░░░░░░░` 30.0% |
-| Encoder & RSX 15 kHz progressive scanline feasibility | 15% | `██░░░░░░░░` 20.0% |
+| Live LV1 anchor resolution (sysmgr_ss physical segments) | 15% | `██████████` 100% |
+| Encoder & RSX 15 kHz progressive scanline feasibility | 15% | `████░░░░░░` 40.0% |
 | Prototype LV1 timing patch / profile override | 15% | `░░░░░░░░░░` 0% |
 | Hardware waveform verification (line count, sync, 15.7 kHz) | 5% | `░░░░░░░░░░` 0% |
 
-_Last update: 2026-11-11. Integrated progress tracking tooling and initial progress metrics._
+_Last update: 2026-11-11. Stage 1b &amp; Stage 2 SUCCESS: Slot 10 verified as live sysmgr_ss (PID 10); resolved all 109 virtual-to-physical pages. All three anchors (Metadata at 0x144160, Raster at 0x143b60, Encoder at 0x793000) PASSED 100% bit-for-bit with matching SHA-256 hashes._
 <!-- progress:end -->
 
 The progress block above is generated: edit `docs/progress.json` (or run `python -I tools/update_progress.py --note "..." --set "<stage>=<percent>"`) after every iteration, then commit and push.
