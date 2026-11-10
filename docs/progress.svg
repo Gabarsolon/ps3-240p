@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="560" height="34" viewBox="0 0 560 34" role="img" aria-label="Project progress 89%">
-  <title>Project progress 89%</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="34" viewBox="0 0 560 34" role="img" aria-label="Project progress 98%">
+  <title>Project progress 98%</title>
   <defs>
     <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#3fb950"/>
@@ -9,7 +9,7 @@
   </defs>
   <rect x="0.5" y="0.5" width="559" height="33" rx="9" fill="#d0d7de" stroke="#8c959f"/>
   <g clip-path="url(#c)">
-    <rect x="2" y="2" width="494.8" height="30" fill="url(#g)"/>
+    <rect x="2" y="2" width="542.1" height="30" fill="url(#g)"/>
   </g>
-  <text x="280.0" y="22.0" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#ffffff" stroke="#1a7f37" stroke-width="0.6" paint-order="stroke">89%</text>
+  <text x="280.0" y="22.0" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#ffffff" stroke="#1a7f37" stroke-width="0.6" paint-order="stroke">98%</text>
 </svg>

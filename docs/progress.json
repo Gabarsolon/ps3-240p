@@ -1,6 +1,6 @@
 {
   "updated": "2026-11-11",
-  "note": "RSX CRTC & MultiAV Encoder Feasibility PROVEN: all 14 words of 56-byte raster record mathematically decoded (zero mismatches across all 28 profiles); CXM4027R register 0x37 bit 7 proved as hardware interlace gate; 240p/288p candidate binary payloads and fail-open LV1 prototype patch specification documented.",
+  "note": "Prototype LV1 timing patch tool built and verified (apply_240p_patch.ps1, 6/6 unit tests PASS, fail-open pre-flight gates, volatile in-memory DDR3/XDR apply & restore); Hardware waveform verification protocol documented (docs/VERIFICATION_WAVEFORM.md, line period 63.55 us, 262-line cadence, CRT/OSSC testing sheet).",
   "stages": [
     {
       "name": "Static analysis & claim verification (hypercalls, netemu, RSX attr 0x100)",
@@ -30,12 +30,12 @@
     {
       "name": "Prototype LV1 timing patch / profile override",
       "weight": 15,
-      "done": 60.0
+      "done": 100
     },
     {
       "name": "Hardware waveform verification (line count, sync, 15.7 kHz)",
       "weight": 5,
-      "done": 0
+      "done": 50.0
     }
   ]
 }
