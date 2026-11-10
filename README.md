@@ -9,3 +9,25 @@ The report corrects hypercall/function mappings, AV packet layout, mode-ID names
 Rules: own console, no firmware or game files in this repository (Sony-derived files stay in a local, gitignored `local_only/`), research and static analysis only unless the owner says otherwise.
 
 Related: [ps2-netemu-disc](https://github.com/Gabarsolon/ps2-netemu-disc) (private) shares the firmware unpacking and LV1 analysis tooling this research reuses.
+
+<!-- progress:start -->
+## Progress
+
+![Project progress 58%](docs/progress.svg)
+
+**Overall: about 58%** (effort-weighted estimate; the real risk is not evenly spread).
+
+| Stage | Weight | Done |
+|---|---:|---|
+| Static analysis & claim verification (hypercalls, netemu, RSX attr 0x100) | 15% | `██████████` 100% |
+| AV-manager timing tables & emulator video path trace | 20% | `██████████` 100% |
+| LV1 process loader & memory architecture modeling | 15% | `██████████` 100% |
+| Live LV1 anchor resolution (sysmgr_ss physical segments) | 15% | `███░░░░░░░` 30.0% |
+| Encoder & RSX 15 kHz progressive scanline feasibility | 15% | `██░░░░░░░░` 20.0% |
+| Prototype LV1 timing patch / profile override | 15% | `░░░░░░░░░░` 0% |
+| Hardware waveform verification (line count, sync, 15.7 kHz) | 5% | `░░░░░░░░░░` 0% |
+
+_Last update: 2026-11-11. Integrated progress tracking tooling and initial progress metrics._
+<!-- progress:end -->
+
+The progress block above is generated: edit `docs/progress.json` (or run `python -I tools/update_progress.py --note "..." --set "<stage>=<percent>"`) after every iteration, then commit and push.

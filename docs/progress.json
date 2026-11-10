@@ -1,0 +1,41 @@
+{
+  "updated": "2026-11-11",
+  "note": "Integrated progress tracking tooling and initial progress metrics.",
+  "stages": [
+    {
+      "name": "Static analysis & claim verification (hypercalls, netemu, RSX attr 0x100)",
+      "weight": 15,
+      "done": 100
+    },
+    {
+      "name": "AV-manager timing tables & emulator video path trace",
+      "weight": 20,
+      "done": 100
+    },
+    {
+      "name": "LV1 process loader & memory architecture modeling",
+      "weight": 15,
+      "done": 100
+    },
+    {
+      "name": "Live LV1 anchor resolution (sysmgr_ss physical segments)",
+      "weight": 15,
+      "done": 30.0
+    },
+    {
+      "name": "Encoder & RSX 15 kHz progressive scanline feasibility",
+      "weight": 15,
+      "done": 20.0
+    },
+    {
+      "name": "Prototype LV1 timing patch / profile override",
+      "weight": 15,
+      "done": 0
+    },
+    {
+      "name": "Hardware waveform verification (line count, sync, 15.7 kHz)",
+      "weight": 5,
+      "done": 0
+    }
+  ]
+}
