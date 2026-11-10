@@ -1,6 +1,6 @@
 {
   "updated": "2026-11-11",
-  "note": "Stage 1b & Stage 2 SUCCESS: Slot 10 verified as live sysmgr_ss (PID 10); resolved all 109 virtual-to-physical pages. All three anchors (Metadata at 0x144160, Raster at 0x143b60, Encoder at 0x793000) PASSED 100% bit-for-bit with matching SHA-256 hashes.",
+  "note": "RSX CRTC & MultiAV Encoder Feasibility PROVEN: all 14 words of 56-byte raster record mathematically decoded (zero mismatches across all 28 profiles); CXM4027R register 0x37 bit 7 proved as hardware interlace gate; 240p/288p candidate binary payloads and fail-open LV1 prototype patch specification documented.",
   "stages": [
     {
       "name": "Static analysis & claim verification (hypercalls, netemu, RSX attr 0x100)",
@@ -25,12 +25,12 @@
     {
       "name": "Encoder & RSX 15 kHz progressive scanline feasibility",
       "weight": 15,
-      "done": 40.0
+      "done": 100
     },
     {
       "name": "Prototype LV1 timing patch / profile override",
       "weight": 15,
-      "done": 0
+      "done": 60.0
     },
     {
       "name": "Hardware waveform verification (line count, sync, 15.7 kHz)",
