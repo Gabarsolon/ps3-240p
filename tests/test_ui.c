@@ -15,8 +15,8 @@ static void save_ppm(const char *path,const uint32_t *p,int w,int h)
 int main(int argc,char **argv)
 {
  const char *items[]={"PAL 288p (test unavailable)","NTSC 240p (test unavailable)","Stock timing / reboot info","Output / diagnostics","Recheck timing memory","Exit to XMB"};
- int sizes[][2]={{720,480},{720,576},{1280,720},{1920,1080}};
- for(int n=0;n<4;n++)for(int wide=0;wide<2;wide++){
+ int sizes[][2]={{720,240},{720,288},{720,480},{720,576},{1280,720},{1920,1080}};
+ for(int n=0;n<6;n++)for(int wide=0;wide<2;wide++){
   int w=sizes[n][0],h=sizes[n][1];uint32_t *p=malloc(((size_t)w*h+2)*4);assert(p);
   p[0]=p[w*h+1]=0x12345678;
   ui_canvas canvas={p+1,w,observe,NULL};ui_result result;
