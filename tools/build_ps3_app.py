@@ -18,7 +18,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 CONTENT_ID = "UP0001-PS240P001_00-PS3240PSWITCH001"
 TITLE = "PS3 240p / 288p Switcher"
 APP_ID = "PS240P001"
-APP_VERSION = "01.15"
+APP_VERSION = "01.16"
 
 def sha256_file(path: Path) -> str:
     h = hashlib.sha256()
@@ -135,7 +135,7 @@ def main(sdk_path: str):
         "content_id": CONTENT_ID,
         "app_id": APP_ID,
         "app_version": APP_VERSION,
-        "validation": "Diagnostics build; timing transitions disabled after owner-reported signal loss and console freeze",
+        "validation": "Live timing test build with 15-second automatic rollback and metadata height fix",
         "package": out_pkg.name,
         "size_bytes": pkg_size,
         "sha256": pkg_sha,

@@ -5,7 +5,7 @@ static int fail(switch_flow *f,const char *s)
 {snprintf(f->error,sizeof(f->error),"%s",s);return -1;}
 int switch_tests_available(void)
 {
-#ifdef TIMING_OFFLINE_TEST
+#if defined(TIMING_OFFLINE_TEST) || defined(PS3_ENABLE_TIMING_SWITCH)
  return 1;
 #else
  return 0;

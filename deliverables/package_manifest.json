@@ -2,11 +2,11 @@
   "title": "PS3 240p / 288p Switcher",
   "content_id": "UP0001-PS240P001_00-PS3240PSWITCH001",
   "app_id": "PS240P001",
-  "app_version": "01.15",
-  "validation": "Diagnostics build; timing transitions disabled after owner-reported signal loss and console freeze",
+  "app_version": "01.16",
+  "validation": "Live timing test build with 15-second automatic rollback and metadata height fix",
   "package": "PS3-240P.pkg",
-  "size_bytes": 179664,
-  "sha256": "f15288758caf8f1c692b0a84933f57fdb41d8cf98ed2ebeecc17f6115c0205dd",
+  "size_bytes": 180432,
+  "sha256": "6ca6181bebcc87ec5d31a0e2c9c7ea8f01da2a6b180de07272df537ce7385ecf",
   "files": [
     {
       "file": "ICON0.PNG",
@@ -16,7 +16,7 @@
     {
       "file": "PARAM.SFO",
       "bytes": 1040,
-      "sha256": "cb1dcf3d7c5c3440e7d0cb58c1306b5547ab3cb056996333bd0af1dd53569c32"
+      "sha256": "b5d468834fac8426ca0fa7be0b1407d100c32eb04b968a347e891a1c2226a15e"
     },
     {
       "file": "USRDIR/BuzzBridge-LICENSE.txt",
@@ -25,8 +25,8 @@
     },
     {
       "file": "USRDIR/EBOOT.BIN",
-      "bytes": 149680,
-      "sha256": "75ae225735dc6135414c88924d99481ea7eeb82c2b02ce6b9dcae392738ce125"
+      "bytes": 150448,
+      "sha256": "a35cd08fa03614480741d2127ae5596dbb4bb6420a1d8059938715470dfe985d"
     }
   ]
 }

@@ -43,7 +43,7 @@ static const uint64_t g_stock_240p_metadata[METADATA_WORDS] = {
 static const uint64_t g_patch_240p_metadata[METADATA_WORDS] = {
     0x426fc29f00000000ULL,
     0x0000000400000b40ULL,
-    0x000000f000000000ULL
+    0x000001e000000000ULL
 };
 
 static const uint64_t g_stock_240p_raster[RASTER_WORDS] = {
@@ -86,7 +86,7 @@ static const uint64_t g_stock_288p_metadata[METADATA_WORDS] = {
 static const uint64_t g_patch_288p_metadata[METADATA_WORDS] = {
     0x4248000000000000ULL,
     0x0000000400000b40ULL,
-    0x0000012000000001ULL
+    0x0000024000000001ULL
 };
 
 static const uint64_t g_stock_288p_raster[RASTER_WORDS] = {
