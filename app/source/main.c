@@ -158,10 +158,10 @@ static int drain(void)
 }
 static int active_raster_height(void)
 {
- if(flow.pending)return flow.target==4?240:288;
+ if(flow.pending)return 240;
  if(patch.ready){
   if(patch_state(&patch,0)==STATE_PATCHED&&state.displayMode.resolution==4)return 240;
-  if(patch_state(&patch,1)==STATE_PATCHED&&state.displayMode.resolution==5)return 288;
+  if(patch_state(&patch,1)==STATE_PATCHED&&state.displayMode.resolution==5)return 240;
  }
  return resolution.height;
 }
@@ -306,7 +306,7 @@ static void diagnostics(void)
  else snprintf(cache,sizeof(cache),"AV cached raster (not a measurement):\nHead 0: %u active / %u total, state=%u\nHead 1: %u active / %u total, state=%u",
   cached_video.head[0].active_lines,cached_video.head[0].total_lines,cached_video.head[0].state,
   cached_video.head[1].active_lines,cached_video.head[1].total_lines,cached_video.head[1].state);
- snprintf(text,sizeof(text),"Build 1.1.9 / diagnostics\nReported output: %ux%u %s\nPort: 0x%02x (RGB/SCART supported)\nNTSC tables: %s\nPAL tables: %s\nLV1 access: %s\nAV UART permission: %s (no command sent)\nLog: %s\n\n%s\n\n%s\n\nTiming tests enabled with 15-second automatic recovery safeguard.",
+ snprintf(text,sizeof(text),"Build 1.2.0 / diagnostics\nReported output: %ux%u %s\nPort: 0x%02x (RGB/SCART supported)\nNTSC tables: %s\nPAL tables: %s\nLV1 access: %s\nAV UART permission: %s (no command sent)\nLog: %s\n\n%s\n\n%s\n\nTiming tests enabled with 15-second automatic recovery safeguard.",
   resolution.width,resolution.height,state.displayMode.scanMode==VIDEO_SCANMODE_INTERLACE?"interlaced":"progressive",
   device.portType,memory_state(patch_state(&patch,0)),memory_state(patch_state(&patch,1)),
   backend==1?"PS3MAPI":backend==2?"CFW 8/9":"not verified",
@@ -339,14 +339,14 @@ static void test_mode(int family)
  uint64_t deadline=now()+15000000;int keep=0;
  while(!exiting&&now()<deadline){
   uint64_t t=now();unsigned remaining=t<deadline?(unsigned)((deadline-t+999999)/1000000):0;
-  char text[512];snprintf(text,sizeof(text),"%s candidate loaded (auto restore %us).\nCross: keep / Circle: restore\n\nTV OSDs often label 288p as '576i' (both are 15kHz 50Hz).\nCheck CRT screen for scanlines / no interlace flicker.\nOr test NTSC 240p to force a 60Hz mode switch.",
-   family?"PAL 288p":"NTSC 240p",remaining);
+  char text[512];snprintf(text,sizeof(text),"%s candidate loaded (auto restore %us).\nCross: keep / Circle: restore\n\nPAL-60 runs at quiet 15.625 kHz European CRT line rate at 60 Hz.\nNTSC runs at 15.734 kHz with corrected vertical sync marker.\nCheck CRT screen and listen to the flyback coil whine.",
+   family?"PAL-60 240p (Quiet 15.6 kHz)":"NTSC 240p (Standard 15.7 kHz)",remaining);
   ui_view view={0};view.title="Picture test";view.text=text;view.page=-1;
   if(frame(&view))break;unsigned key=input();
   if(!system_menu&&(key&CROSS)){keep=1;break;}
   if(key&CIRCLE)break;
  }
- if(keep){switch_keep(&flow);app_log("User kept candidate; analog waveform UNVERIFIED");status("Candidate kept","Timing table writes and video requests completed. Verify 288p/240p on the display. Exiting leaves these RAM edits until reboot; XMB/game behavior is unverified.");}
+ if(keep){switch_keep(&flow);app_log("User kept candidate; analog waveform UNVERIFIED");status("Candidate kept","Timing table writes and video requests completed. Verify 240p on the display. Exiting leaves these RAM edits until reboot; XMB/game behavior is unverified.");}
  else {
   int rc=switch_revert(&flow);app_log("Automatic/cancel recovery=%d %s",rc,flow.error);
   if(!exiting)status(rc?"Recovery needs reboot":"Previous settings restored",rc?flow.error:"Previous RAM values and display requests restored. The diagnostic log contains this attempt.");
@@ -356,7 +356,7 @@ int main(void)
 {
  (void)sysLv2FsMkdir("/dev_hdd0/tmp",0777);
  if(sysLv2FsOpen(LOG_PATH,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&log_fd,0666,NULL,0))log_fd=-1;
- app_log("PS3 240p build 1.1.9; native enabled=%u preparing=%u; timing tests ENABLED",CELL_VIDEO_OUT_OUTPUT_STATE_ENABLED,CELL_VIDEO_OUT_OUTPUT_STATE_PREPARING);
+ app_log("PS3 240p build 1.2.0; native enabled=%u preparing=%u; timing tests ENABLED",CELL_VIDEO_OUT_OUTPUT_STATE_ENABLED,CELL_VIDEO_OUT_OUTPUT_STATE_PREPARING);
  void *host=memalign(1024*1024,HOST_SIZE);
  if(!host){app_log("Startup failed: host allocation");return 1;}
  int rc=cellSysutilRegisterCallback(0,event,NULL);if(rc){app_log("Startup callback rc=%08x",(unsigned)rc);return 1;}
@@ -376,12 +376,12 @@ int main(void)
  /* Present the menu before any LV1 operation. Inspection is explicit via
   * Recheck timing memory, or occurs when starting a timing test. */
  app_log("UI ready; LV1 inspection deferred until selected");
- const char *items[]={"Test PAL 288p (50 Hz)","Test NTSC 240p (60 Hz)","Restore stock timing","Output / diagnostics","Recheck timing memory","Exit to XMB"};
+ const char *items[]={"Test PAL-60 240p (Quiet 15.6 kHz)","Test NTSC 240p (Standard 15.7 kHz)","Restore stock timing","Output / diagnostics","Recheck timing memory","Exit to XMB"};
  int selected=0,cached_ntsc=STATE_UNKNOWN,cached_pal=STATE_UNKNOWN,outcome=0;
  uint64_t next_memory_poll=0;
  while(!exiting){
   if(!os_active()&&now()>=next_memory_poll){cached_ntsc=patch_state(&patch,0);cached_pal=patch_state(&patch,1);next_memory_poll=now()+1000000;}
-  char title[200];snprintf(title,sizeof(title),"Analog SD timing / v1.1.9\nPAL: %s  NTSC: %s",memory_state(cached_pal),memory_state(cached_ntsc));
+  char title[200];snprintf(title,sizeof(title),"Analog SD timing / v1.2.0\nPAL-60: %s  NTSC: %s",memory_state(cached_pal),memory_state(cached_ntsc));
   ui_view view={0};view.title=title;view.items=items;view.count=6;view.selected=selected;view.page=-1;
   if(frame(&view)){app_log("Frame loop stopped: exit_request=%d gpu_ok=%d",exiting,gpu_ok);if(!exiting)outcome=1;break;}
   /* Complete the first pair before accepting a choice, including quit. */

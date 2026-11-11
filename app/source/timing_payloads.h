@@ -60,7 +60,7 @@ static const uint64_t g_patch_240p_raster[RASTER_WORDS] = {
     0x00000b3f00000d67ULL,
     0x00000b7f00000c77ULL,
     0x000000ef00000105ULL,
-    0x000000f4000000f4ULL,
+    0x000000f5000000f4ULL,
     0x000000f7054704cbULL,
     0x04cb03d300f700f4ULL,
     0x0001000011000000ULL
@@ -75,7 +75,7 @@ static const uint64_t g_patch_240p_encoder[ENCODER_WORDS] = {
 };
 
 /* -------------------------------------------------------------------------
- * PAL 288p (720x288 @ 50.00 Hz, 15.625 kHz scan)
+ * PAL-60 240p (720x240 @ 60.10 Hz, 15.625 kHz scan - Quiet European CRT)
  * ------------------------------------------------------------------------- */
 static const uint64_t g_stock_288p_metadata[METADATA_WORDS] = {
     0x4248000000000001ULL,
@@ -84,7 +84,7 @@ static const uint64_t g_stock_288p_metadata[METADATA_WORDS] = {
 };
 
 static const uint64_t g_patch_288p_metadata[METADATA_WORDS] = {
-    0x4248000000000000ULL,
+    0x4270624d00000000ULL,
     0x0000000400000b40ULL,
     0x0000024000000001ULL
 };
@@ -102,10 +102,10 @@ static const uint64_t g_stock_288p_raster[RASTER_WORDS] = {
 static const uint64_t g_patch_288p_raster[RASTER_WORDS] = {
     0x00000b3f00000d7fULL,
     0x00000b6f00000c6bULL,
-    0x0000011f00000137ULL,
-    0x0000012300000122ULL,
-    0x00000125052d04afULL,
-    0x04af03b301250122ULL,
+    0x000000ef00000103ULL,
+    0x000000f4000000f3ULL,
+    0x000000f6052d04afULL,
+    0x04af03b300f600f3ULL,
     0x0001000011000000ULL
 };
 
