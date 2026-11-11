@@ -1,5 +1,7 @@
 # Prototype LV1 Timing Patch: Native 240p/288p Profile Override
 
+> **Correction (2026-11-11):** The fixed physical addresses are boot observations, not stable write targets; the native app now resolves protection pages. The original package remained at 576i in the owner's SCART RGB test. Encoder behavior, activation and the claimed output remain unverified. This historical specification is superseded by [the app review](APP_REVIEW_2026-11-11.md), including the request-height validation gap.
+
 **Status: SPECIFICATION COMPLETED — READY FOR VERIFICATION**  
 **Date: 2026-11-11**  
 **Target Environment: PS3 Slim CECH-25xx, Evilnat 4.93 CFW + Cobra, webMAN MOD**  

@@ -8,8 +8,9 @@
  *
  * Target: sysmgr_ss LV1 Volatile DRAM records in Evilnat 4.93 CFW + Cobra
  *
- * All addresses reside within the hypervisor heap partition (0x00000000..0x02000000)
- * and are strictly 8-byte aligned.
+ * Historical physical addresses below are reference observations only.
+ * lv1_patch.c resolves every target through the live protection-page list.
+ * These are experimental timing candidates, not verified analog waveforms.
  */
 
 #define LV1_HEAP_BASE         0x00000000ULL
@@ -90,21 +91,21 @@ static const uint64_t g_patch_288p_metadata[METADATA_WORDS] = {
 
 static const uint64_t g_stock_288p_raster[RASTER_WORDS] = {
     0x00000b3f00000d7fULL,
-    0x00000b6f00000c6dULL,
+    0x00000b6f00000c6bULL,
     0x0000023f00000270ULL,
     0x0000024500000244ULL,
-    0x0000024a052e04afULL,
-    0x04af03b1024a0244ULL,
+    0x0000024a052d04afULL,
+    0x04af03b3024a0244ULL,
     0x0003000011000000ULL
 };
 
 static const uint64_t g_patch_288p_raster[RASTER_WORDS] = {
     0x00000b3f00000d7fULL,
-    0x00000b6f00000c6dULL,
+    0x00000b6f00000c6bULL,
     0x0000011f00000137ULL,
     0x0000012300000122ULL,
-    0x00000125052e04afULL,
-    0x04af03b101250122ULL,
+    0x00000125052d04afULL,
+    0x04af03b301250122ULL,
     0x0001000011000000ULL
 };
 

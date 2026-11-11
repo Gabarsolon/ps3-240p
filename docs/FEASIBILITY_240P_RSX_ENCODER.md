@@ -1,5 +1,7 @@
 # RSX CRTC and MultiAV Encoder 15 kHz Progressive (240p/288p) Feasibility Assessment
 
+> **Correction (2026-11-11):** This document overstates hardware/encoder proof. The owner reports that the original package remained at 576i over SCART RGB. Native low-line output and register 0x37's electrical meaning remain UNKNOWN. Several PAL values below were wrong. See [the app review and corrected status](APP_REVIEW_2026-11-11.md); treat the following as historical candidate reasoning, not a verified hardware result.
+
 **Status: COMPLETED (PROVEN / MATHEMATICALLY VERIFIED)**  
 **Date: 2026-11-11**  
 **Target Console: PS3 Slim CECH-25xx, Evilnat 4.93 CFW + Cobra, webMAN MOD**  

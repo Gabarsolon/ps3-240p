@@ -97,6 +97,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Superseded by the native application's page-resolved, transactional writer.
+# These physical addresses were observations from one boot, not constants.
+if (($Apply -or $Restore) -and -not $WhatIf -and -not $UnitTest) {
+    throw "Legacy fixed-address writes are retired. Use PS3-240P.pkg v1.1 (live page resolution, full preflight and rollback)."
+}
+
 # Hypervisor Partition Memory Bounds (32 MB partition ceiling)
 $HvHeapBase  = 0x00000000L
 $HvHeapLimit = 0x02000000L
@@ -129,10 +135,10 @@ $ProfileDefinitions = @{
         EncoderAddr     = 0x793050L   # Template 1 aligned at +0x0C (pairs 6..9: 35:00 36:00 37:XX 38:00)
         EncoderLen      = 8
         StockMetadata   = "42480000000000010000000400000b400000024000000001"
-        StockRaster     = "00000b3f00000d7f00000b6f00000c6d0000023f0000027000000245000002440000024a052e04af04af03b1024a02440003000011000000"
+        StockRaster     = "00000b3f00000d7f00000b6f00000c6b0000023f0000027000000245000002440000024a052d04af04af03b3024a02440003000011000000"
         StockEncoder    = "3500360037803800"
         PatchMetadata   = "42480000000000000000000400000b400000012000000001"
-        PatchRaster     = "00000b3f00000d7f00000b6f00000c6d0000011f00000137000001230000012200000125052e04af04af03b1012501220001000011000000"
+        PatchRaster     = "00000b3f00000d7f00000b6f00000c6b0000011f00000137000001230000012200000125052d04af04af03b3012501220001000011000000"
         PatchEncoder    = "3500360037003800"
     }
 }
@@ -426,10 +432,10 @@ if ($Inspect -or (-not $Apply -and -not $Restore)) {
 
     if ($isStock) {
         Write-Host "  Profile State: STOCK FIRMWARE (Unpatched)" -ForegroundColor Green
-        Write-Host "  Ready to apply in-memory timing override via -Apply switch."
+        Write-Host "  Historical address matches stock data. Use the native app for live page resolution."
     } elseif ($isPatched) {
-        Write-Host "  Profile State: NATIVE OVERRIDE ACTIVE ($Mode)" -ForegroundColor Magenta
-        Write-Host "  The console volatile RAM is currently patched for native 15 kHz progressive scanout."
+        Write-Host "  Profile State: CANDIDATE TABLE BYTES ($Mode)" -ForegroundColor Magenta
+        Write-Host "  Matching RAM bytes do not establish active analog scan timing."
         Write-Host "  Use -Restore to revert back to stock timing, or reboot the console."
     } else {
         Write-Host "  Profile State: CUSTOM / DIVERGENT" -ForegroundColor Yellow

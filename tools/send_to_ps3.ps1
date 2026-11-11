@@ -29,7 +29,7 @@ Write-Host "SHA-256   : $expectedHash"
 
 # Test FTP connection to console
 Write-Host "Testing FTP connectivity..." -NoNewline
-$null = curl.exe --fail --silent --show-error --max-time 10 "ftp://${ConsoleIP}/dev_hdd0/"
+$null = curl.exe --fail --silent --show-error --disable-epsv --ftp-skip-pasv-ip --max-time 10 "ftp://${ConsoleIP}/dev_hdd0/"
 if ($LASTEXITCODE -ne 0) {
     throw "Cannot connect to ftp://${ConsoleIP}/. Ensure PS3 is powered on with webMAN MOD FTP enabled."
 }
@@ -38,7 +38,7 @@ Write-Host " Connected!" -ForegroundColor Green
 # Upload to /dev_hdd0/packages/
 $remotePath = '/dev_hdd0/packages/PS3-240P.pkg'
 Write-Host "Uploading PS3-240P.pkg -> ${remotePath}..." -ForegroundColor Cyan
-curl.exe --fail --silent --show-error --ftp-create-dirs --max-time 300 -T $pkg "ftp://${ConsoleIP}${remotePath}"
+curl.exe --fail --silent --show-error --disable-epsv --ftp-skip-pasv-ip --ftp-create-dirs --max-time 300 -T $pkg "ftp://${ConsoleIP}${remotePath}"
 if ($LASTEXITCODE -ne 0) {
     throw "Upload failed to ftp://${ConsoleIP}${remotePath}"
 }
@@ -47,7 +47,7 @@ Write-Host "Upload complete. Verifying integrity via read-back..." -ForegroundCo
 # Download to temp and verify byte-for-byte hash
 $tempFile = Join-Path $env:TEMP ('ps3_verify_' + [System.Guid]::NewGuid().ToString('N') + '.pkg')
 try {
-    curl.exe --fail --silent --show-error --max-time 300 -o $tempFile "ftp://${ConsoleIP}${remotePath}"
+    curl.exe --fail --silent --show-error --disable-epsv --ftp-skip-pasv-ip --max-time 300 -o $tempFile "ftp://${ConsoleIP}${remotePath}"
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to download uploaded package for verification."
     }

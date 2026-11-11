@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 CONTENT_ID = "UP0001-PS240P001_00-PS3240PSWITCH001"
 TITLE = "PS3 240p / 288p Switcher"
 APP_ID = "PS240P001"
+APP_VERSION = "01.15"
 
 def sha256_file(path: Path) -> str:
     h = hashlib.sha256()
@@ -87,11 +88,13 @@ def main(sdk_path: str):
     sfo_tool = sdk / "bin" / "sfo.exe"
     sfo_xml = sdk / "bin" / "sfo.xml"
     run(sfo_tool, "--title", TITLE, "--appid", APP_ID, "-f", sfo_xml, sfo_dst)
+    run(sfo_tool, "set", sfo_dst, f"APP_VER={APP_VERSION}", "--out", sfo_dst)
     run(sfo_tool, "validate", sfo_dst)
 
     # Copy Icon
     if icon_src.exists():
         shutil.copyfile(icon_src, icon_dst)
+    shutil.copyfile(ROOT / "app" / "BuzzBridge-LICENSE", usr_dir / "BuzzBridge-LICENSE.txt")
 
     # 5. Build and Finalize PKG
     print("\n=== [5/5] Building & Finalizing PS3 PKG ===")
@@ -108,11 +111,21 @@ def main(sdk_path: str):
     assert "USRDIR/EBOOT.BIN" in packaged
     assert "PARAM.SFO" in packaged
     assert "ICON0.PNG" in packaged
+    assert "USRDIR/BuzzBridge-LICENSE.txt" in packaged
+    for name, data in packaged.items():
+        original = (staging_dir / name).read_bytes()
+        if name == "USRDIR/EBOOT.BIN":
+            # PS3DK packaging/finalization can append zero padding to SELF.
+            # Require the complete original executable and a zero-only tail.
+            assert data.startswith(original)
+            assert not any(data[len(original):])
+        else:
+            assert data == original, f"Packaged content differs: {name}"
     print(f"[*] Package acceptance verified: {len(packaged)} files decrypted cleanly")
 
     # Copy raw deliverables
     shutil.copyfile(elf_file, deliverables_dir / "ps3-240p-app.elf")
-    shutil.copyfile(eboot_dst, deliverables_dir / "EBOOT.BIN")
+    (deliverables_dir / "EBOOT.BIN").write_bytes(packaged["USRDIR/EBOOT.BIN"])
 
     # Generate Manifest
     pkg_sha = sha256_file(out_pkg)
@@ -121,25 +134,14 @@ def main(sdk_path: str):
         "title": TITLE,
         "content_id": CONTENT_ID,
         "app_id": APP_ID,
+        "app_version": APP_VERSION,
+        "validation": "Diagnostics build; timing transitions disabled after owner-reported signal loss and console freeze",
         "package": out_pkg.name,
         "size_bytes": pkg_size,
         "sha256": pkg_sha,
         "files": [
-            {
-                "file": "USRDIR/EBOOT.BIN",
-                "bytes": eboot_dst.stat().st_size,
-                "sha256": sha256_file(eboot_dst)
-            },
-            {
-                "file": "PARAM.SFO",
-                "bytes": sfo_dst.stat().st_size,
-                "sha256": sha256_file(sfo_dst)
-            },
-            {
-                "file": "ICON0.PNG",
-                "bytes": icon_dst.stat().st_size,
-                "sha256": sha256_file(icon_dst)
-            }
+            {"file": name, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+            for name, data in sorted(packaged.items())
         ]
     }
 
