@@ -66,19 +66,23 @@ static int edge(const ui_layout *l,int units,int scale)
 void ui_layout_init(ui_layout *l,int w,int h,int wide,int interlaced)
 {
  memset(l,0,sizeof(*l));l->width=w;l->height=h;l->wide=!!wide;l->interlaced=!!interlaced;
- int margin_x=h<=288?11:h<=576?10:5;
- int margin_y=h<=288?10:h<=576?10:5;
+ int margin_x=h<=576?11:5;
+ int margin_y=h<=576?12:5;
  l->left=(w*margin_x+99)/100;l->right=w-l->left;
  l->top=(h*margin_y+99)/100;l->bottom=h-l->top;
- l->scale=(h<=288)?1:(h*3+699)/700;
- l->title_scale=(h<=288)?2:l->scale+1;
+ l->scale=(h<=288)?1:(h<=576)?2:(h*3+699)/700;
+ l->title_scale=(h<=288)?2:(h<=576)?4:l->scale+1;
  if(l->interlaced&&l->scale<2)l->scale=2;
  if(l->interlaced&&l->title_scale<2)l->title_scale=2;
  l->advance=edge(l,6,l->scale);
  l->line=8*l->scale;
- if(h<=288&&!l->interlaced)l->line=10;
- l->gap=l->scale*2;
- if(h<=288&&!l->interlaced)l->gap=4;
+ if(!l->interlaced){
+  if(h<=288){l->line=10;l->gap=4;}
+  else if(h<=576){l->line=20;l->gap=8;}
+ }
+ else {
+  l->gap=l->scale*2;
+ }
  l->columns=(l->right-l->left)/l->advance;
  /* Title, at most two subtitle lines, and two hint lines have reserved space. */
  l->body_top=l->top+7*l->title_scale+l->gap+2*l->line+l->gap;

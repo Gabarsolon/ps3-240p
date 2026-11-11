@@ -6,7 +6,7 @@
 
 enum PatchMode { MODE_240P_NTSC, MODE_288P_PAL };
 enum PatchState { STATE_UNKNOWN=-1, STATE_STOCK, STATE_PATCHED, STATE_MIXED };
-#define PATCH_WORDS 42
+#define PATCH_WORDS 44
 #define VIDEO_PROBE_WORDS 27
 typedef struct {
  uint32_t state,vid,width,height,pitch,active_lines,total_lines,scan_control;

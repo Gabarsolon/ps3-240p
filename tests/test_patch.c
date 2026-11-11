@@ -30,6 +30,8 @@ static uint64_t physical(uint32_t va)
  if((va&0xfffff000u)==0xc000d000u)return 0x1e00000+(va&0xfff);
  if((va&0xfffff000u)==0xa0023000u)return 0x1300000+(va&0xfff);
  if((va&0xfffff000u)==0xa0024000u)return 0x1600000+(va&0xfff);
+ if((va&0xfffff000u)==0x80002000u)return 0x1500000+(va&0xfff);
+ if((va&0xfffff000u)==0x80003000u)return 0x1400000+(va&0xfff);
  abort();
 }
 static void setup(void)
@@ -39,11 +41,11 @@ static void setup(void)
  cache_unstable=cache_reads=0;
  put64(0x36cdb0+10*16+8,0x120000);put32(0x120000,10);put64(0x120018,0x121000);
  put64(0x121000,0x35ecb8);put32(0x12103c,0x122000);
- unsigned vas[]={0x80039000,0x80038000,0xc0000000,0xc000b000,0xc000d000,0xa0023000,0xa0024000};
- for(int i=0;i<7;i++){
+ unsigned vas[]={0x80039000,0x80038000,0xc0000000,0xc000b000,0xc000d000,0xa0023000,0xa0024000,0x80002000,0x80003000};
+ for(int i=0;i<9;i++){
   uint64_t node=0x122000+i*0x20;
   put64(node,physical(vas[i]));put32(node+8,vas[i]);
-  put32(node+0x14,i==6?0x121028:(uint32_t)node+0x20);ram[node+0x18]=12;
+  put32(node+0x14,i==8?0x121028:(uint32_t)node+0x20);ram[node+0x18]=12;
  }
  /* First resolve populates the target plan, then rejects empty bytes. */
  assert(patch_resolve(&c)==-1);
@@ -66,6 +68,12 @@ static void setup(void)
  assert(c.stock[38]==UINT64_C(0x04af03b3024a0244));
  assert((c.candidate[29]&0xffffffffu)==0); /* Preserve PAL profile 3 routing. */
  assert(c.candidate[14]==c.stock[14]); /* Preserve NTSC alias placement. */
+ assert(c.address[42]==physical(0x80002f48));
+ assert(c.stock[42]==STOCK_SCALER_ENABLE);
+ assert(c.candidate[42]==PATCH_SCALER_ENABLE);
+ assert(c.address[43]==physical(0x80003100));
+ assert(c.stock[43]==STOCK_SCALE_STEP);
+ assert(c.candidate[43]==PATCH_SCALE_STEP);
 }
 static void is_stock(void)
 {for(int i=0;i<PATCH_WORDS;i++)assert(get(NULL,c.address[i])==c.stock[i]);}

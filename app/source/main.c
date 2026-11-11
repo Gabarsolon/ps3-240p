@@ -158,11 +158,6 @@ static int drain(void)
 }
 static int active_raster_height(void)
 {
- if(flow.pending)return flow.target==4?240:288;
- if(patch.ready){
-  if(patch_state(&patch,0)==STATE_PATCHED&&state.displayMode.resolution==4)return 240;
-  if(patch_state(&patch,1)==STATE_PATCHED&&state.displayMode.resolution==5)return 288;
- }
  return resolution.height;
 }
 static int read_video(void)
@@ -181,8 +176,9 @@ static int read_video(void)
  state=next;resolution=res;device=info;pitch=res.width*4u;
  for(int i=0;i<2;i++)if(cellGcmSetDisplayBuffer((uint8_t)i,offsets[i],pitch,res.width,res.height))return -1;
  int eff_h=active_raster_height();
- ui_layout_init(&layout,res.width,eff_h,next.displayMode.aspect==VIDEO_ASPECT_16_9,
-  eff_h>288&&next.displayMode.scanMode==VIDEO_SCANMODE_INTERLACE);
+ int is_interlaced=(next.displayMode.scanMode==VIDEO_SCANMODE_INTERLACE);
+ if(patch.ready&&(patch_state(&patch,0)==STATE_PATCHED||patch_state(&patch,1)==STATE_PATCHED))is_interlaced=0;
+ ui_layout_init(&layout,res.width,eff_h,next.displayMode.aspect==VIDEO_ASPECT_16_9,is_interlaced);
  return 0;
 }
 static int available(void *u,unsigned id)
@@ -244,8 +240,9 @@ static int frame(const ui_view *view)
  if(hash!=presented_hash){hash_frames=0;presented_hash=hash;}
  if(hash_frames>=2&&!os_active()){usleep(16000);return 0;}
  if(drain())return -1;
- ui_layout_init(&layout,resolution.width,eff_h,state.displayMode.aspect==VIDEO_ASPECT_16_9,
-  eff_h>288&&state.displayMode.scanMode==VIDEO_SCANMODE_INTERLACE);
+ int is_interlaced=(state.displayMode.scanMode==VIDEO_SCANMODE_INTERLACE);
+ if(patch.ready&&(patch_state(&patch,0)==STATE_PATCHED||patch_state(&patch,1)==STATE_PATCHED))is_interlaced=0;
+ ui_layout_init(&layout,resolution.width,eff_h,state.displayMode.aspect==VIDEO_ASPECT_16_9,is_interlaced);
  for(unsigned i=0;i<(unsigned)resolution.width*resolution.height;i++)software[i]=UI_BACKGROUND;
  ui_canvas canvas={software,resolution.width,NULL,NULL};
  if((!os_active()||!submitted_frames)&&ui_render(&layout,view,&canvas,&drawn))return -1;
