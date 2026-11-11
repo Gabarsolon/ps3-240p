@@ -313,10 +313,17 @@ static void test_mode(int family)
  if(switch_begin(&flow,family,state.displayMode.resolution,analog())){
   app_log("Experiment failed: %s",flow.error);status("Test stopped",flow.error);return;
  }
+ if(!patch_read_cached_video(&patch,&cached_video)){
+  int in_cache=patch_candidate_in_cache(&patch,&cached_video,family);
+  app_log("Post-switch AV CACHE: match=%d Head0(active=%u,total=%u,scan=%08x,vid=%x) Head1(active=%u,total=%u,scan=%08x,vid=%x)",
+   in_cache,
+   cached_video.head[0].active_lines,cached_video.head[0].total_lines,cached_video.head[0].scan_control,cached_video.head[0].vid,
+   cached_video.head[1].active_lines,cached_video.head[1].total_lines,cached_video.head[1].scan_control,cached_video.head[1].vid);
+ }
  uint64_t deadline=now()+15000000;int keep=0;
  while(!exiting&&now()<deadline){
   uint64_t t=now();unsigned remaining=t<deadline?(unsigned)((deadline-t+999999)/1000000):0;
-  char text[512];snprintf(text,sizeof(text),"%s candidate loaded.\nCross: keep / Circle: restore\nAuto restore in %u seconds.\n\nIf the display still says 576i, choose restore. Native progressive output is unverified.",
+  char text[512];snprintf(text,sizeof(text),"%s candidate loaded (auto restore %us).\nCross: keep / Circle: restore\n\nTV OSDs often label 288p as '576i' (both are 15kHz 50Hz).\nCheck CRT screen for scanlines / no interlace flicker.\nOr test NTSC 240p to force a 60Hz mode switch.",
    family?"PAL 288p":"NTSC 240p",remaining);
   ui_view view={0};view.title="Picture test";view.text=text;view.page=-1;
   if(frame(&view))break;unsigned key=input();
