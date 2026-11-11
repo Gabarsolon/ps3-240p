@@ -2,11 +2,11 @@
   "title": "PS3 240p / 288p Switcher",
   "content_id": "UP0001-PS240P001_00-PS3240PSWITCH001",
   "app_id": "PS240P001",
-  "app_version": "01.18",
+  "app_version": "01.19",
   "validation": "Proportional 240p/288p typography with non-overlapping line spacing and CRT overscan margins",
   "package": "PS3-240P.pkg",
   "size_bytes": 181136,
-  "sha256": "03ab1d920a2db6b0c599d3980e5361fe61fa8c1f4565c5f988b38b140d9717cf",
+  "sha256": "a2573d1199e3c23d78a5585ecf8c2320e43c28890478ba770871459df5c9d117",
   "files": [
     {
       "file": "ICON0.PNG",
@@ -16,7 +16,7 @@
     {
       "file": "PARAM.SFO",
       "bytes": 1040,
-      "sha256": "abc43cdff0bdac7c37865281deccae4fe7a5582806c0fdd32a8a8541ffdc9af0"
+      "sha256": "70b7021ec878801c88aa1eeaa4fd857e5a6157763423e2996f82b5151a21d1db"
     },
     {
       "file": "USRDIR/BuzzBridge-LICENSE.txt",
@@ -26,7 +26,7 @@
     {
       "file": "USRDIR/EBOOT.BIN",
       "bytes": 151152,
-      "sha256": "109c917e94ab97c9a8c1f2c2ad14ea82b9f640f2302a6459cc147082e3e8c621"
+      "sha256": "fc657399fc65a1589778edc1f897ff0812e43d4337a1cbcdea026cdc0ed6f977"
     }
   ]
 }

@@ -140,7 +140,7 @@ int main(int argc,char **argv)
  }else if(scenario==8){
   assert(rc==0&&exit_code==0&&configures==1&&backend==0&&!patch.ready);
   assert(strstr(log_capture,"Blocked timing action family=1; no timing/output changes"));
-  assert(flips==4&&pad_calls==4);
+  assert(flips==5&&pad_calls==4);
  }else if(scenario==0||scenario==2){
   assert(rc==0&&exit_code==0&&flips==2&&configures==1);
   assert(completed_frames==2&&backend==0&&!patch.ready&&!patch.error[0]);

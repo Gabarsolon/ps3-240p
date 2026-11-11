@@ -46,6 +46,7 @@ static uint64_t log_bytes;
 static unsigned held[7];
 static int input_armed=1;
 static uint64_t presented_hash;
+static unsigned hash_frames;
 static unsigned submitted_frames,completed_frames;
 static uint64_t next_heartbeat;
 static struct {uint64_t status,param;} events[16];
@@ -136,7 +137,7 @@ static int wait_flip(void)
   else if(now()>=deadline){app_log("GPU flip timeout");gpu_ok=0;return -1;}
   usleep(1000);
  }
- cellGcmResetFlipStatus();pending=0;completed_frames++;
+ pending=0;completed_frames++;
  if(completed_frames<=2)app_log("Frame %u flip completed",completed_frames);
  return 0;
 }
@@ -223,10 +224,9 @@ static int frame(const ui_view *view)
   * the OS draws. Stop application input/edits, not the presentation loop. */
  if(refresh&&!os_active()){
   if(drain())return -1;
-  if(!os_active()){refresh=0;presented_hash=0;if(read_video())return -1;}
+  if(!os_active()){refresh=0;presented_hash=0;hash_frames=0;if(read_video())return -1;}
  }
- /* Same idle presentation policy as Buzz Bridge: unchanged screens stay on
-  * the display while callbacks and controller input continue to be pumped. */
+ /* Prime BOTH registered buffers on content change before idle reuse. */
  uint64_t hash=UINT64_C(14695981039346656037);
  const char *strings[258];int string_count=0;
  strings[string_count++]=view->title;strings[string_count++]=view->text;
@@ -241,9 +241,8 @@ static int frame(const ui_view *view)
  hash=(hash^resolution.height)*UINT64_C(1099511628211);
  int eff_h=active_raster_height();
  hash=(hash^(unsigned)eff_h)*UINT64_C(1099511628211);
- /* Prime BOTH registered buffers before idle reuse. Complete and log the
-  * initial flip pair so first-frame behavior can be checked on hardware. */
- if(hash==presented_hash&&submitted_frames>=2&&!os_active()){usleep(16000);return 0;}
+ if(hash!=presented_hash){hash_frames=0;presented_hash=hash;}
+ if(hash_frames>=2&&!os_active()){usleep(16000);return 0;}
  if(drain())return -1;
  ui_layout_init(&layout,resolution.width,eff_h,state.displayMode.aspect==VIDEO_ASPECT_16_9,
   eff_h>288&&state.displayMode.scanMode==VIDEO_SCANMODE_INTERLACE);
@@ -261,9 +260,9 @@ static int frame(const ui_view *view)
  int rc=cellGcmSetFlip(CELL_GCM_CURRENT,(uint8_t)front);
  if(rc){app_log("Flip submission=%08x",(unsigned)rc);gpu_ok=0;return -1;}
  cellGcmSetWaitFlip(CELL_GCM_CURRENT);cellGcmFlush(CELL_GCM_CURRENT);
- submitted_frames++;
+ submitted_frames++;hash_frames++;
  if(submitted_frames<=2)app_log("Frame %u flip submitted: buffer=%d",submitted_frames,front);
- pending=1;front^=1;if(!os_active())presented_hash=hash;usleep(10000);return 0;
+ pending=1;front^=1;usleep(10000);return 0;
 }
 enum {UP=1,DOWN=2,CROSS=4,CIRCLE=8};
 static unsigned input(void)
@@ -305,7 +304,7 @@ static void diagnostics(void)
  else snprintf(cache,sizeof(cache),"AV cached raster (not a measurement):\nHead 0: %u active / %u total, state=%u\nHead 1: %u active / %u total, state=%u",
   cached_video.head[0].active_lines,cached_video.head[0].total_lines,cached_video.head[0].state,
   cached_video.head[1].active_lines,cached_video.head[1].total_lines,cached_video.head[1].state);
- snprintf(text,sizeof(text),"Build 1.1.8 / diagnostics\nReported output: %ux%u %s\nPort: 0x%02x (RGB/SCART supported)\nNTSC tables: %s\nPAL tables: %s\nLV1 access: %s\nAV UART permission: %s (no command sent)\nLog: %s\n\n%s\n\n%s\n\nTiming tests enabled with 15-second automatic recovery safeguard.",
+ snprintf(text,sizeof(text),"Build 1.1.9 / diagnostics\nReported output: %ux%u %s\nPort: 0x%02x (RGB/SCART supported)\nNTSC tables: %s\nPAL tables: %s\nLV1 access: %s\nAV UART permission: %s (no command sent)\nLog: %s\n\n%s\n\n%s\n\nTiming tests enabled with 15-second automatic recovery safeguard.",
   resolution.width,resolution.height,state.displayMode.scanMode==VIDEO_SCANMODE_INTERLACE?"interlaced":"progressive",
   device.portType,memory_state(patch_state(&patch,0)),memory_state(patch_state(&patch,1)),
   backend==1?"PS3MAPI":backend==2?"CFW 8/9":"not verified",
@@ -355,7 +354,7 @@ int main(void)
 {
  (void)sysLv2FsMkdir("/dev_hdd0/tmp",0777);
  if(sysLv2FsOpen(LOG_PATH,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&log_fd,0666,NULL,0))log_fd=-1;
- app_log("PS3 240p build 1.1.8; native enabled=%u preparing=%u; timing tests ENABLED",CELL_VIDEO_OUT_OUTPUT_STATE_ENABLED,CELL_VIDEO_OUT_OUTPUT_STATE_PREPARING);
+ app_log("PS3 240p build 1.1.9; native enabled=%u preparing=%u; timing tests ENABLED",CELL_VIDEO_OUT_OUTPUT_STATE_ENABLED,CELL_VIDEO_OUT_OUTPUT_STATE_PREPARING);
  void *host=memalign(1024*1024,HOST_SIZE);
  if(!host){app_log("Startup failed: host allocation");return 1;}
  int rc=cellSysutilRegisterCallback(0,event,NULL);if(rc){app_log("Startup callback rc=%08x",(unsigned)rc);return 1;}
@@ -380,7 +379,7 @@ int main(void)
  uint64_t next_memory_poll=0;
  while(!exiting){
   if(!os_active()&&now()>=next_memory_poll){cached_ntsc=patch_state(&patch,0);cached_pal=patch_state(&patch,1);next_memory_poll=now()+1000000;}
-  char title[200];snprintf(title,sizeof(title),"Analog SD timing / v1.1.8\nPAL: %s  NTSC: %s",memory_state(cached_pal),memory_state(cached_ntsc));
+  char title[200];snprintf(title,sizeof(title),"Analog SD timing / v1.1.9\nPAL: %s  NTSC: %s",memory_state(cached_pal),memory_state(cached_ntsc));
   ui_view view={0};view.title=title;view.items=items;view.count=6;view.selected=selected;view.page=-1;
   if(frame(&view)){app_log("Frame loop stopped: exit_request=%d gpu_ok=%d",exiting,gpu_ok);if(!exiting)outcome=1;break;}
   /* Complete the first pair before accepting a choice, including quit. */

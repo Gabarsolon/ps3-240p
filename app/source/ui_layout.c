@@ -66,9 +66,10 @@ static int edge(const ui_layout *l,int units,int scale)
 void ui_layout_init(ui_layout *l,int w,int h,int wide,int interlaced)
 {
  memset(l,0,sizeof(*l));l->width=w;l->height=h;l->wide=!!wide;l->interlaced=!!interlaced;
- int margin=h<=288?6:h<=576?10:5;
- l->left=(w*margin+99)/100;l->right=w-l->left;
- l->top=(h*margin+99)/100;l->bottom=h-l->top;
+ int margin_x=h<=288?11:h<=576?10:5;
+ int margin_y=h<=288?10:h<=576?10:5;
+ l->left=(w*margin_x+99)/100;l->right=w-l->left;
+ l->top=(h*margin_y+99)/100;l->bottom=h-l->top;
  l->scale=(h<=288)?1:(h*3+699)/700;
  l->title_scale=(h<=288)?2:l->scale+1;
  if(l->interlaced&&l->scale<2)l->scale=2;
