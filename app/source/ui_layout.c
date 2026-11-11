@@ -59,21 +59,25 @@ static unsigned bits(unsigned char c,int row)
 /* A screen pixel has display width aspect*height/width, in line-height units. */
 static int edge(const ui_layout *l,int units,int scale)
 {
- int ref_h=l->height<=288?l->height*2:l->height;
  int numerator=units*scale*l->width*(l->wide?9:3);
- int denominator=ref_h*(l->wide?16:4);
+ int denominator=l->height*(l->wide?16:4);
  return (numerator+denominator/2)/denominator;
 }
 void ui_layout_init(ui_layout *l,int w,int h,int wide,int interlaced)
 {
  memset(l,0,sizeof(*l));l->width=w;l->height=h;l->wide=!!wide;l->interlaced=!!interlaced;
- int margin=h<=576?10:5;
+ int margin=h<=288?6:h<=576?10:5;
  l->left=(w*margin+99)/100;l->right=w-l->left;
  l->top=(h*margin+99)/100;l->bottom=h-l->top;
- l->scale=(h<=288)?1:(h*3+699)/700;l->title_scale=(h<=288)?2:l->scale+1;
+ l->scale=(h<=288)?1:(h*3+699)/700;
+ l->title_scale=(h<=288)?2:l->scale+1;
  if(l->interlaced&&l->scale<2)l->scale=2;
  if(l->interlaced&&l->title_scale<2)l->title_scale=2;
- l->advance=edge(l,6,l->scale);l->line=8*l->scale;l->gap=l->scale*2;
+ l->advance=edge(l,6,l->scale);
+ l->line=8*l->scale;
+ if(h<=288&&!l->interlaced)l->line=10;
+ l->gap=l->scale*2;
+ if(h<=288&&!l->interlaced)l->gap=4;
  l->columns=(l->right-l->left)/l->advance;
  /* Title, at most two subtitle lines, and two hint lines have reserved space. */
  l->body_top=l->top+7*l->title_scale+l->gap+2*l->line+l->gap;

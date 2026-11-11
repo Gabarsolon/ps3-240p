@@ -20,7 +20,7 @@ int main(int argc,char **argv)
   int w=sizes[n][0],h=sizes[n][1];uint32_t *p=malloc(((size_t)w*h+2)*4);assert(p);
   p[0]=p[w*h+1]=0x12345678;
   ui_canvas canvas={p+1,w,observe,NULL};ui_result result;
-  ui_layout_init(&l,w,h,wide,n<2);
+  ui_layout_init(&l,w,h,wide,n>=2&&n<4);
   ui_view v={0};v.title="Analog SD timing / v1.1.4\nPAL: unavailable  NTSC: unavailable";v.items=items;v.count=6;v.page=-1;
   for(int i=0;i<6;i++){v.selected=i;assert(!ui_render(&l,&v,&canvas,&result));assert(result.selection_visible);}
   v.selected=0;assert(!ui_render(&l,&v,&canvas,&result));
