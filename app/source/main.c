@@ -158,6 +158,11 @@ static int drain(void)
 }
 static int active_raster_height(void)
 {
+ if(flow.pending)return flow.target==4?240:288;
+ if(patch.ready){
+  if(patch_state(&patch,0)==STATE_PATCHED&&state.displayMode.resolution==4)return 240;
+  if(patch_state(&patch,1)==STATE_PATCHED&&state.displayMode.resolution==5)return 288;
+ }
  return resolution.height;
 }
 static int read_video(void)

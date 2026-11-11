@@ -30,17 +30,6 @@
 #define METADATA_WORDS        3  /* 24 bytes */
 #define RASTER_WORDS          7  /* 56 bytes */
 #define ENCODER_WORDS         1  /*  8 bytes */
-#define SCALER_WORDS          2  /* 16 bytes */
-
-/* -------------------------------------------------------------------------
- * RSX CRTC Hardware Scaler (240p/288p progressive field scanout)
- * Target: sysmgr_ss VA 0x80002f48 (scaler enable) and 0x80003100 (scale step)
- * ------------------------------------------------------------------------- */
-#define STOCK_SCALER_ENABLE   UINT64_C(0x3ca0011b60031000) /* ori r3, r0, 0x1000 */
-#define PATCH_SCALER_ENABLE   UINT64_C(0x3ca0011b60031010) /* ori r3, r0, 0x1010 (YSCALE_ENABLE) */
-
-#define STOCK_SCALE_STEP      UINT64_C(0xeb21ffc83c001000) /* lis r0, 0x1000 (1.0 step) */
-#define PATCH_SCALE_STEP      UINT64_C(0xeb21ffc83c002000) /* lis r0, 0x2000 (2.0 step) */
 
 /* -------------------------------------------------------------------------
  * NTSC 240p (720x240 @ 59.94 Hz, 15.734 kHz scan)

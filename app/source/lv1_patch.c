@@ -97,18 +97,6 @@ int patch_resolve(patch_context *c)
   c->candidate[index]=family?g_patch_288p_encoder[0]:g_patch_240p_encoder[0];
   c->family[index]=(unsigned)family;
  }
- if(translate(pages,count,0x80002f48u,&c->address[index]))
-  return fail(c,"Scaler enable page unavailable/ambiguous");
- c->stock[index]=STOCK_SCALER_ENABLE;
- c->candidate[index]=PATCH_SCALER_ENABLE;
- c->family[index]=2;
- index++;
- if(translate(pages,count,0x80003100u,&c->address[index]))
-  return fail(c,"Vertical scale step page unavailable/ambiguous");
- c->stock[index]=STOCK_SCALE_STEP;
- c->candidate[index]=PATCH_SCALE_STEP;
- c->family[index]=2;
- index++;
  for(int i=0;i<PATCH_WORDS;i++)for(int j=0;j<i;j++)if(c->address[i]==c->address[j])
   return fail(c,"Aliased timing targets");
  c->ready=1;
@@ -189,19 +177,14 @@ int patch_candidate_in_cache(const patch_context *c,const patch_cached_video *vi
 }
 int patch_state(patch_context *c,int family)
 {
- int fam_stock=1,fam_patched=1,shared_patched=1;
+ int stock=1,patched=1;
  if(!c->ready||family<0||family>1)return STATE_UNKNOWN;
- for(int i=0;i<PATCH_WORDS;i++){
+ for(int i=0;i<PATCH_WORDS;i++)if(c->family[i]==(unsigned)family){
   uint64_t v=read64(c,c->address[i]);
   if(v!=c->stock[i]&&v!=c->candidate[i])return STATE_UNKNOWN;
-  if(c->family[i]==(unsigned)family){
-   fam_stock&=v==c->stock[i];
-   fam_patched&=v==c->candidate[i];
-  }else if(c->family[i]==2){
-   shared_patched&=v==c->candidate[i];
-  }
+  stock&=v==c->stock[i];patched&=v==c->candidate[i];
  }
- return (fam_patched&&shared_patched)?STATE_PATCHED:fam_stock?STATE_STOCK:STATE_MIXED;
+ return stock?STATE_STOCK:patched?STATE_PATCHED:STATE_MIXED;
 }
 int patch_snapshot(patch_context *c)
 {
@@ -250,7 +233,7 @@ int patch_apply(patch_context *c,int family)
 {
  uint64_t target[PATCH_WORDS];
  if(family<0||family>1)return fail(c,"Invalid timing family");
- for(int i=0;i<PATCH_WORDS;i++)target[i]=(c->family[i]==(unsigned)family||c->family[i]==2)?c->candidate[i]:c->stock[i];
+ for(int i=0;i<PATCH_WORDS;i++)target[i]=c->family[i]==(unsigned)family?c->candidate[i]:c->stock[i];
  return transaction(c,target);
 }
 int patch_restore(patch_context *c){return transaction(c,c->stock);}
