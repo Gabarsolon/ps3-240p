@@ -43,6 +43,11 @@ PROLOGUE_LIMIT = 24
 # A terminating branch must sit within this many instructions of the end.
 TAIL_WINDOW = 4
 
+# Module-info version byte. The only VSH plugin proven to load on this
+# console/toolchain (the sibling helper ps3buzz_vsh) uses 3; the packer's
+# generic fallback is 4, which was never exercised.
+MODULE_INFO_MINOR = 3
+
 
 class Elf64BE:
     """Minimal big-endian ELF64 reader: sections, symbols, relocations."""
@@ -225,6 +230,20 @@ def check_prx(addresses):
     return exports
 
 
+def check_module_info():
+    """The module-info version byte must match the proven VSH plugin."""
+    data = PRX.read_bytes()
+    marker = b"vsh_240p"
+    at = data.find(marker)
+    assert at >= 0, "packed PRX does not contain the module name"
+    info = at - 4
+    attr, version, minor = struct.unpack_from(">HBB", data, info)
+    assert attr == 0 and version == 0, "unexpected module-info attributes"
+    assert minor == MODULE_INFO_MINOR, (
+        f"module-info version byte is {minor}, expected {MODULE_INFO_MINOR}")
+    return minor
+
+
 def main():
     elf_path = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else ELF
     if not elf_path.exists():
@@ -235,11 +254,13 @@ def main():
     elf = Elf64BE(elf_path.read_bytes())
     addresses = check_elf(elf)
     exports = check_prx(addresses)
+    minor = check_module_info()
 
     print("VSH plugin loader contract:")
     print(f"  exit_thread  code @ 0x{addresses['exit_entry']:08x}  (lv2 syscall 41, no blr)")
     print(f"  module_start code @ 0x{addresses['start_entry']:08x}  (ends in a call to exit_thread, no blr)")
     print(f"  module_stop  code @ 0x{addresses['stop_entry']:08x}  (ends in a call to exit_thread, no blr)")
+    print(f"  module info  version byte {minor} (matches the proven VSH helper)")
     print(f"  PRX exports  module_start nid={NID_MODULE_START:08x} -> 0x{exports[NID_MODULE_START]:08x}")
     print(f"               module_stop  nid={NID_MODULE_STOP:08x} -> 0x{exports[NID_MODULE_STOP]:08x}")
     print("PASS: module_start cannot return to the Cobra loader; the load call terminates")

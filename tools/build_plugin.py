@@ -9,6 +9,7 @@ implementation of the native PRX container and the VSH self-signing.
 """
 import argparse
 import hashlib
+import json
 import os
 import pathlib
 import shutil
@@ -24,6 +25,11 @@ SOURCE = PLUGIN / "vsh_240p.c"
 ELF = PLUGIN / "vsh_240p.elf"
 PRX = PLUGIN / "vsh_240p.prx"
 SPRX = PLUGIN / "vsh_240p.sprx"
+
+# Module-info version byte. The packer's generic fallback is 4, but the only
+# VSH plugin proven to load on this console/toolchain (the sibling helper
+# ps3buzz_vsh) uses 3. Match the proven value instead of the untested one.
+MODULE_INFO_MINOR = 3
 
 # Same flags as the verified build: strict warnings, no unwind tables, and a
 # 16-byte page size so the native PRX packer's segment layout stays valid.
@@ -76,6 +82,17 @@ def main():
     run(sys.executable, "-B", SIBLING / "tools" / "native_prx.py",
         ELF, PRX, "--name", args.name,
         "--start", "module_start", "--stop", "module_stop")
+
+    # Align the module-info version byte with the proven VSH helper.
+    layout = json.loads(pathlib.Path(str(PRX) + ".layout.json").read_text())
+    info = layout["module_info_file_offset"]
+    prx = bytearray(PRX.read_bytes())
+    if prx[info + 3] != MODULE_INFO_MINOR:
+        prx[info + 3] = MODULE_INFO_MINOR
+        PRX.write_bytes(bytes(prx))
+        print(f"module-info minor version set to {MODULE_INFO_MINOR}")
+    else:
+        print(f"module-info minor version already {MODULE_INFO_MINOR}")
 
     run(sys.executable, "-B", SIBLING / "tools" / "sign_native_self.py", PRX, SPRX, "--vsh")
 

@@ -116,6 +116,16 @@ int ioPadGetData(int port,padData *p)
 int main(int argc,char **argv)
 {
  assert(argc==2);scenario=atoi(argv[1]);
+ /* The plugin deploy must compare CONTENT, not just length. A size-only
+  * check skipped the deploy whenever a rebuild produced the same byte count,
+  * so the console kept running the old plugin (2026-11-13: the v3 plugin
+  * never reached the unit because the v2 plugin was also 8112 bytes). */
+ assert(!deploy_needed(8112,UINT64_C(0x1111111111111111),8112,UINT64_C(0x1111111111111111)));
+ assert(deploy_needed(8112,UINT64_C(0x1111111111111111),8112,UINT64_C(0x2222222222222222)));
+ assert(deploy_needed(8112,UINT64_C(0x1111111111111111),8016,UINT64_C(0x1111111111111111)));
+ assert(deploy_needed(8112,UINT64_C(0x1111111111111111),0,0));
+ assert(deploy_needed(0,0,8112,UINT64_C(0x1111111111111111)));
+ int digest_size=123;assert(file_digest("/nonexistent",&digest_size)==0&&digest_size==0);
  assert(!switch_tests_available());
  switch_flow production={0};production.patch=&patch;
  assert(switch_begin(&production,1,5,1)==-1&&configures==0&&state_reads==0);

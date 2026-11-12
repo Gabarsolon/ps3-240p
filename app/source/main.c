@@ -288,37 +288,69 @@ static void unload_enforcer(void) {
  (void)unload_vsh_plugin;(void)cobra_mapi;
 #endif
 }
+/* Deploy is needed unless the installed file is byte-identical to the staged
+ * build. A size-only comparison silently skipped the deploy whenever a
+ * rebuild produced the same byte count: the console kept running the OLD
+ * plugin while the app reported "already current", so a new plugin build
+ * never reached the unit (observed 2026-11-13: the v3 plugin stayed on the
+ * console because the v2 plugin had the same 8112-byte length). */
+static int deploy_needed(int src_size,uint64_t src_hash,int dst_size,uint64_t dst_hash)
+{
+ return src_size<=0||dst_size!=src_size||dst_hash!=src_hash;
+}
+/* FNV-1a 64 over the file contents; also returns the byte count. */
+static uint64_t file_digest(const char *path,int *size_out)
+{
+#ifndef APP_HOST_TEST
+ int fd=-1;uint64_t hash=UINT64_C(14695981039346656037),total=0;
+ if(sysLv2FsOpen(path,SYS_O_RDONLY,&fd,0,NULL,0)!=0)return 0;
+ unsigned char buf[2048];uint64_t rd=0;
+ while(sysLv2FsRead(fd,buf,sizeof(buf),&rd)==0&&rd>0){
+  total+=rd;
+  for(uint64_t i=0;i<rd;i++)hash=(hash^buf[i])*UINT64_C(1099511628211);
+ }
+ sysLv2FsClose(fd);
+ if(size_out)*size_out=(int)total;
+ return total?hash:0;
+#else
+ (void)path;if(size_out)*size_out=0;return 0;
+#endif
+}
 static void deploy_enforcer(void) {
 #ifndef APP_HOST_TEST
- /* Own install dir (APP_ID from build_ps3_app.py). A stale path here made
-  * every deploy a silent no-op, and an existing 0-byte target blocked retry. */
- sysFSStat st, src;
- if (sysLv2FsStat("/dev_hdd0/plugins/vsh_240p.sprx", &st) == 0 &&
-     sysLv2FsStat("/dev_hdd0/game/PS240P001/USRDIR/vsh_240p.sprx", &src) == 0 &&
-     st.st_size == src.st_size) {
-  app_log("Enforcer plugin already current (%u bytes)", (unsigned)st.st_size);
+ const char *src_path="/dev_hdd0/game/PS240P001/USRDIR/vsh_240p.sprx";
+ const char *dst_path="/dev_hdd0/plugins/vsh_240p.sprx";
+ int src_size=0,dst_size=0;
+ uint64_t src_hash=file_digest(src_path,&src_size);
+ uint64_t dst_hash=file_digest(dst_path,&dst_size);
+ app_log("Enforcer staged=%u bytes hash=%08x%08x installed=%u bytes hash=%08x%08x",
+  (unsigned)src_size,(unsigned)(src_hash>>32),(unsigned)(src_hash&0xffffffffu),
+  (unsigned)dst_size,(unsigned)(dst_hash>>32),(unsigned)(dst_hash&0xffffffffu));
+ if(!deploy_needed(src_size,src_hash,dst_size,dst_hash)){
+  app_log("Enforcer plugin already current (%u bytes)",(unsigned)dst_size);
   return;
  }
- if (sysLv2FsStat("/dev_hdd0/game/PS240P001/USRDIR/vsh_240p.sprx", &src) != 0) {
-  app_log("Enforcer deploy: USRDIR source missing");
-  return;
- }
- int in_fd=-1, out_fd=-1;
- if (sysLv2FsOpen("/dev_hdd0/game/PS240P001/USRDIR/vsh_240p.sprx", SYS_O_RDONLY, &in_fd, 0, NULL, 0) == 0) {
-  if (sysLv2FsOpen("/dev_hdd0/plugins/vsh_240p.sprx", SYS_O_WRONLY | SYS_O_CREAT | SYS_O_TRUNC, &out_fd, 0777, NULL, 0) == 0) {
-   char buf[2048]; uint64_t rd=0, wr=0;
-   while (sysLv2FsRead(in_fd, buf, sizeof(buf), &rd) == 0 && rd > 0) {
-    (void)sysLv2FsWrite(out_fd, buf, rd, &wr);
+ if(src_size<=0){app_log("Enforcer deploy: USRDIR source missing or empty");return;}
+ int in_fd=-1,out_fd=-1;
+ if(sysLv2FsOpen(src_path,SYS_O_RDONLY,&in_fd,0,NULL,0)==0){
+  if(sysLv2FsOpen(dst_path,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&out_fd,0777,NULL,0)==0){
+   char buf[2048];uint64_t rd=0,wr=0;int bad=0;
+   while(sysLv2FsRead(in_fd,buf,sizeof(buf),&rd)==0&&rd>0){
+    if(sysLv2FsWrite(out_fd,buf,rd,&wr)!=0||wr!=rd){bad=1;break;}
    }
    sysLv2FsClose(out_fd);
+   if(bad)app_log("Enforcer deploy: write error");
   }
   sysLv2FsClose(in_fd);
  }
- if (sysLv2FsStat("/dev_hdd0/plugins/vsh_240p.sprx", &st) == 0 && st.st_size == src.st_size) {
-  app_log("Enforcer deployed to /dev_hdd0/plugins (%u bytes)", (unsigned)st.st_size);
- } else {
-  app_log("Enforcer deploy FAILED");
- }
+ int done_size=0;uint64_t done_hash=file_digest(dst_path,&done_size);
+ if(!deploy_needed(src_size,src_hash,done_size,done_hash))
+  app_log("Enforcer deployed to %s (%u bytes hash=%08x%08x)",dst_path,(unsigned)done_size,
+   (unsigned)(done_hash>>32),(unsigned)(done_hash&0xffffffffu));
+ else
+  app_log("Enforcer deploy FAILED (now %u bytes hash=%08x%08x, expected %u bytes hash=%08x%08x)",
+   (unsigned)done_size,(unsigned)(done_hash>>32),(unsigned)(done_hash&0xffffffffu),
+   (unsigned)src_size,(unsigned)(src_hash>>32),(unsigned)(src_hash&0xffffffffu));
 #endif
 }
 static int configure(void *u,unsigned id)
