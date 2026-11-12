@@ -40,6 +40,13 @@ def main():
             command.append(str(out / "pattern-480.ppm"))
             command.append(str(out / "pattern-240.ppm"))
         subprocess.run(command, cwd=ROOT, check=True)
+    # The VSH plugin loader contract is checked on the compiled artifact: a
+    # module_start that returns normally hangs the Cobra loader forever.
+    plugin_elf = ROOT / "plugin" / "vsh_240p.elf"
+    if plugin_elf.exists():
+        subprocess.run([sys.executable, str(ROOT / "tests" / "test_plugin.py")], cwd=ROOT, check=True)
+    else:
+        print("SKIP: plugin/vsh_240p.elf not built; run tools/build_plugin.py for the loader-contract check")
     if args.firmware:
         # Compare generated plans against the private input without copying any
         # firmware bytes to tracked files or printing a firmware dump.

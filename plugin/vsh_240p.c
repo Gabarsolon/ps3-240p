@@ -1,13 +1,25 @@
-/* SPDX-License-Identifier: MIT. VSH resident SD corrector (safe v2).
+/* SPDX-License-Identifier: MIT. VSH resident SD corrector (safe v3).
  *
  * v1 (2026-11-11) froze the console. Root causes, checked against the SDK
  * headers (cell/cell_video_out.h, sysutil/video.h):
  *   - the scanMode test was inverted: VIDEO_SCANMODE_INTERLACE is 0 and
  *     PROGRESSIVE is 1, so the corrector re-fired on every 500 ms poll;
- *   - every fired configure carried pitch = 0;
- *   - module_start() ended with syscall 41, killing the Cobra loader thread.
+ *   - every fired configure carried pitch = 0.
  *
- * v2 contract:
+ * v3 contract (loader ABI, corrected):
+ *   - Cobra's loadprx runs module_start on the loader thread and waits for
+ *     that thread to TERMINATE. Returning normally from module_start never
+ *     completes the syscall, so the caller's loadprx hangs forever - that is
+ *     what froze the app inside "Cobra load begin slot=2" (PROVEN: the
+ *     sibling plugin ps3buzz_vsh ends module_start with buzz_exit_thread(),
+ *     syscall 41, and its loads always return).
+ *   - module_start therefore ends with exit_thread() and never returns;
+ *     module_stop joins the worker and also ends with exit_thread().
+ *   - v1 was blamed on syscall 41 for the freeze; that was wrong. The real
+ *     v1 faults were the inverted scanMode test and pitch = 0, both fixed
+ *     in v2. The loader contract was the separate v3 freeze.
+ *
+ * v2 contract (timing behaviour, unchanged in v3):
  *   - armed only while /dev_hdd0/tmp/240p_enforcer.on exists;
  *   - passive while /dev_hdd0/tmp/240p_app.active exists, because the
  *     switcher app manages its own transitions (flip drain + readback);
@@ -101,7 +113,7 @@ static void log_open(void) {
 }
 
 static void log_line(const char *event, uint32_t code) {
-    if (log_fd < 0 || log_bytes > 65500u) return;
+    if (log_fd < 0 || log_bytes > LOG_LIMIT - 96u) return;
     char buf[96];
     char *p = buf;
     uint64_t us = sys_time_get_system_time();
@@ -129,7 +141,12 @@ static void corrector(void *arg) {
     (void)arg;
     log_open();
     log_line("start", 0);
+    /* Liveness breadcrumb: "start" only proves the thread began. If the next
+     * line is missing, the thread never got scheduled again (or the log fd
+     * broke after the first write). "alive" proves the worker survived the
+     * start-up settle and reached the poll loop. */
     for (unsigned i = 0; i < 6u && atomic_load(&running); i++) nap_ms(500);
+    log_line("alive", 0);
     unsigned stable = 0, attempts = 0;
     uint64_t idle_until = 0;
     int seen_armed = -1, seen_app = -1;
@@ -191,7 +208,10 @@ int module_start(size_t args, void *argp) {
             atomic_store(&running, 0);
         }
     }
-    /* Return normally; v1 terminated the Cobra loader thread here. */
+    /* Cobra's loadprx waits for this thread to terminate. Returning normally
+     * hangs the caller, so the loader thread must exit here (syscall 41).
+     * Mirrors ps3buzz_vsh module_start exactly. */
+    exit_thread();
     return 0;
 }
 
@@ -202,5 +222,6 @@ int module_stop(size_t args, void *argp) {
         uint64_t status = 0;
         (void)sysThreadJoin(thread_id, &status);
     }
+    exit_thread();
     return 0;
 }

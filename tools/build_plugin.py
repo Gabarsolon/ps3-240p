@@ -1,0 +1,91 @@
+"""Reproducible build of the VSH resident 240p enforcer plugin.
+
+Offline only: compiles, packs and signs plugin/vsh_240p.sprx. It never
+contacts a console.
+
+The linker script and the PRX packer/signer are reused read-only from the
+sibling project (buzz-pad-bridge/ps3/plugin), which owns the proven
+implementation of the native PRX container and the VSH self-signing.
+"""
+import argparse
+import hashlib
+import os
+import pathlib
+import shutil
+import subprocess
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+PLUGIN = ROOT / "plugin"
+SIBLING = pathlib.Path(r"C:\Users\remus\buzz-pad-bridge\ps3\plugin")
+SDK = pathlib.Path(os.environ.get("PS3DK", r"E:\Tools\ps3dk\ps3-sdk-v0.26.0-windows-x86_64"))
+
+SOURCE = PLUGIN / "vsh_240p.c"
+ELF = PLUGIN / "vsh_240p.elf"
+PRX = PLUGIN / "vsh_240p.prx"
+SPRX = PLUGIN / "vsh_240p.sprx"
+
+# Same flags as the verified build: strict warnings, no unwind tables, and a
+# 16-byte page size so the native PRX packer's segment layout stays valid.
+CFLAGS = [
+    "-O2", "-Wall", "-Wextra", "-Werror", "-Wno-misleading-indentation",
+    "-fno-asynchronous-unwind-tables", "-fno-unwind-tables",
+]
+
+
+def run(*args, env=None):
+    subprocess.run([str(a) for a in args], cwd=ROOT, check=True, env=env)
+
+
+def sha256(path):
+    return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--name", default="vsh_240p")
+    parser.add_argument("--keep-elf", action="store_true",
+                        help="Keep the intermediate ELF (default: keep it, it is the packer input)")
+    args = parser.parse_args()
+
+    gcc = SDK / "ppu" / "bin" / "ppu-gcc.exe"
+    linker = SIBLING / "game" / "native-prx.ld"
+    for required in (gcc, linker, SDK / "ppu" / "lib" / "lv2-prx.specs",
+                     SDK / "ppu" / "lib" / "lv2-prx-crt.o", SOURCE):
+        if not required.exists():
+            sys.exit(f"missing build input: {required}")
+
+    compile_cmd = [
+        gcc, *CFLAGS,
+        f"-specs={SDK / 'ppu' / 'lib' / 'lv2-prx.specs'}",
+        "-nostartfiles",
+        "-Wl,-q", "-Wl,-z,max-page-size=16",
+        f"-Wl,-T,{linker.as_posix()}",
+        "-Wl,--gc-sections",
+        SOURCE,
+        SDK / "ppu" / "lib" / "lv2-prx-crt.o",
+        "-lio",
+        "-o", ELF,
+    ]
+    print("compiling:", " ".join(str(c) for c in compile_cmd))
+    # The SDK's specs file resolves its own include paths from PS3DK.
+    env = dict(os.environ)
+    env["PS3DK"] = str(SDK)
+    run(*compile_cmd, env=env)
+
+    run(sys.executable, "-B", SIBLING / "tools" / "native_prx.py",
+        ELF, PRX, "--name", args.name,
+        "--start", "module_start", "--stop", "module_stop")
+
+    run(sys.executable, "-B", SIBLING / "tools" / "sign_native_self.py", PRX, SPRX, "--vsh")
+
+    print()
+    print("=" * 60)
+    print(f"VSH plugin built: {SPRX}")
+    print(f"Bytes  : {SPRX.stat().st_size}")
+    print(f"SHA-256: {sha256(SPRX)}")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    main()
