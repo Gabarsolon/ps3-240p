@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-enum PatchMode { MODE_240P_NTSC, MODE_288P_PAL };
+enum PatchMode { MODE_240P_NTSC, MODE_288P_PAL, MODE_ALL_SD };
 enum PatchState { STATE_UNKNOWN=-1, STATE_STOCK, STATE_PATCHED, STATE_MIXED };
 #define PATCH_WORDS 42
 #define VIDEO_PROBE_WORDS 27

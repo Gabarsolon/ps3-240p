@@ -30,6 +30,8 @@ SYS_PROCESS_PARAM(1001,0x100000);
 #define HOST_SIZE (32u*1024*1024)
 #define MAX_PIXELS (1920u*1080u)
 #define LOG_PATH "/dev_hdd0/tmp/ps3_240p.log"
+#define APP_ACTIVE_FLAG "/dev_hdd0/tmp/240p_app.active"
+#define ENFORCER_FLAG "/dev_hdd0/tmp/240p_enforcer.on"
 static uint32_t *buffers[2],*software,offsets[2],pitch,label_value;
 static videoState state;
 static videoDeviceInfo device;
@@ -196,6 +198,54 @@ static int analog(void)
  return device.portType==VIDEO_PORT_COMPOSITE||device.portType==VIDEO_PORT_COMPONENT||
   device.portType==VIDEO_PORT_RGB||device.portType==VIDEO_PORT_SCART||device.portType==VIDEO_PORT_D;
 }
+static int load_vsh_plugin(unsigned slot, const char *path) {
+#ifndef APP_HOST_TEST
+ lv2syscall5(8, 0x1ee7, slot, (uint64_t)(uintptr_t)path, 0, 0);
+ return_to_user_prog(int);
+#else
+ (void)slot; (void)path; return 0;
+#endif
+}
+static int unload_vsh_plugin(unsigned slot) {
+#ifndef APP_HOST_TEST
+ lv2syscall2(8, 0x1ee8, slot);
+ return_to_user_prog(int);
+#else
+ (void)slot; return 0;
+#endif
+}
+static void write_flag(const char *path) {
+#ifndef APP_HOST_TEST
+ int fd=-1;if(sysLv2FsOpen(path,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&fd,0666,NULL,0)==0)sysLv2FsClose(fd);
+#else
+ (void)path;
+#endif
+}
+static void clear_flag(const char *path) {
+#ifndef APP_HOST_TEST
+ (void)sysLv2FsUnlink(path);
+#else
+ (void)path;
+#endif
+}
+static void deploy_enforcer(void) {
+#ifndef APP_HOST_TEST
+ sysFSStat st;
+ if (sysLv2FsStat("/dev_hdd0/plugins/vsh_240p.sprx", &st) != 0) {
+  int in_fd = -1, out_fd = -1;
+  if (sysLv2FsOpen("/dev_hdd0/game/PS3240P01/USRDIR/vsh_240p.sprx", SYS_O_RDONLY, &in_fd, 0, NULL, 0) == 0) {
+   if (sysLv2FsOpen("/dev_hdd0/plugins/vsh_240p.sprx", SYS_O_WRONLY | SYS_O_CREAT | SYS_O_TRUNC, &out_fd, 0777, NULL, 0) == 0) {
+    char buf[2048]; uint64_t rd = 0, wr = 0;
+    while (sysLv2FsRead(in_fd, buf, sizeof(buf), &rd) == 0 && rd > 0) {
+     sysLv2FsWrite(out_fd, buf, rd, &wr);
+    }
+    sysLv2FsClose(out_fd);
+   }
+   sysLv2FsClose(in_fd);
+  }
+ }
+#endif
+}
 static int configure(void *u,unsigned id)
 {
  (void)u;
@@ -339,8 +389,8 @@ static void test_mode(int family)
  uint64_t deadline=now()+15000000;int keep=0;
  while(!exiting&&now()<deadline){
   uint64_t t=now();unsigned remaining=t<deadline?(unsigned)((deadline-t+999999)/1000000):0;
-  char text[512];snprintf(text,sizeof(text),"%s candidate loaded (auto restore %us).\nCross: keep / Circle: restore\n\nPAL-60 runs at quiet 15.625 kHz European CRT line rate at 60 Hz.\nNTSC runs at 15.734 kHz with corrected vertical sync marker.\nCheck CRT screen and listen to the flyback coil whine.",
-   family?"PAL-60 240p (Quiet 15.6 kHz)":"NTSC 240p (Standard 15.7 kHz)",remaining);
+  char text[512];snprintf(text,sizeof(text),"%s candidate loaded (auto restore %us).\nCross: keep / Circle: restore\n\nRuns at quiet Batocera 15.66 kHz line rate (HTotal 3448) @ 60 Hz.\nListen to CRT flyback transformer whine.\nPress Cross to keep or Circle to restore.",
+   family==MODE_240P_NTSC?"240p 60Hz (Quiet 15.66 kHz)":"PAL 288p 50Hz",remaining);
   ui_view view={0};view.title="Picture test";view.text=text;view.page=-1;
   if(frame(&view))break;unsigned key=input();
   if(!system_menu&&(key&CROSS)){keep=1;break;}
@@ -356,6 +406,7 @@ int main(void)
 {
  (void)sysLv2FsMkdir("/dev_hdd0/tmp",0777);
  if(sysLv2FsOpen(LOG_PATH,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&log_fd,0666,NULL,0))log_fd=-1;
+ write_flag(APP_ACTIVE_FLAG);
  app_log("PS3 240p build 1.2.0; native enabled=%u preparing=%u; timing tests ENABLED",CELL_VIDEO_OUT_OUTPUT_STATE_ENABLED,CELL_VIDEO_OUT_OUTPUT_STATE_PREPARING);
  void *host=memalign(1024*1024,HOST_SIZE);
  if(!host){app_log("Startup failed: host allocation");return 1;}
@@ -376,34 +427,66 @@ int main(void)
  /* Present the menu before any LV1 operation. Inspection is explicit via
   * Recheck timing memory, or occurs when starting a timing test. */
  app_log("UI ready; LV1 inspection deferred until selected");
- const char *items[]={"Test PAL-60 240p (Quiet 15.6 kHz)","Test NTSC 240p (Standard 15.7 kHz)","Restore stock timing","Output / diagnostics","Recheck timing memory","Exit to XMB"};
+ const char *items[]={
+  "Enable 240p + 288p (Start Background Enforcer)",
+  "Test 240p 60Hz (Quiet 15.66 kHz Batocera)",
+  "Test PAL 288p 50Hz",
+  "Restore Stock Timing (Stop Enforcer)",
+  "Output / diagnostics",
+  "Recheck timing memory",
+  "Exit to XMB"
+ };
  int selected=0,cached_ntsc=STATE_UNKNOWN,cached_pal=STATE_UNKNOWN,outcome=0;
  uint64_t next_memory_poll=0;
  while(!exiting){
   if(!os_active()&&now()>=next_memory_poll){cached_ntsc=patch_state(&patch,0);cached_pal=patch_state(&patch,1);next_memory_poll=now()+1000000;}
   char title[200];snprintf(title,sizeof(title),"Analog SD timing / v1.2.0\nPAL-60: %s  NTSC: %s",memory_state(cached_pal),memory_state(cached_ntsc));
-  ui_view view={0};view.title=title;view.items=items;view.count=6;view.selected=selected;view.page=-1;
+  ui_view view={0};view.title=title;view.items=items;view.count=7;view.selected=selected;view.page=-1;
   if(frame(&view)){app_log("Frame loop stopped: exit_request=%d gpu_ok=%d",exiting,gpu_ok);if(!exiting)outcome=1;break;}
   /* Complete the first pair before accepting a choice, including quit. */
   if(submitted_frames<2||completed_frames<2)continue;
   if(now()>=next_heartbeat){app_log("Menu alive: frames=%u completed=%u system_menu=%d",submitted_frames,completed_frames,system_menu);next_heartbeat=now()+15000000;}
   unsigned key=input();
   if(key&CIRCLE)break;
-  if(key&UP)selected=(selected+5)%6;if(key&DOWN)selected=(selected+1)%6;
+  if(key&UP)selected=(selected+6)%7;if(key&DOWN)selected=(selected+1)%7;
   if(key&CROSS){
-   if(selected<2)test_mode(selected==0?MODE_288P_PAL:MODE_240P_NTSC);
-   else if(selected==2){
-    if(!switch_tests_available())status("Stock timing","Rebooting clears the timing edits from RAM. In-app mode transitions are disabled because the previous recovery lost the picture. This choice does not change output settings or timing memory.");
+   if(selected==0){
+    if(read_video()||inspect())status("Apply Error",patch.error[0]?patch.error:"Output query failed");
+    else if(switch_begin(&flow, MODE_ALL_SD, state.displayMode.resolution, analog())){
+     status("Apply Error", flow.error[0]?flow.error:"Failed to apply 240p/288p");
+    } else {
+     switch_keep(&flow);
+     read_video();
+     write_flag(ENFORCER_FLAG);
+     deploy_enforcer();
+     load_vsh_plugin(4, "/dev_hdd0/plugins/vsh_240p.sprx");
+     status("240p/288p Enforcer Active",
+      "Mode 4 and Mode 5 timings patched in RAM.\n"
+      "Enforcer armed and running in VSH Slot 4.\n\n"
+      "- A 576i fallback is corrected to Mode 4 (240p) after ~2 s.\n"
+      "- 480i and HD modes are never touched.\n"
+      "- Passive while this app is open.\n\n"
+      "RAM edits remain active until reboot.\n"
+      "Exit to XMB to enjoy native scanlines!");
+    }
+   }
+   else if(selected==1)test_mode(MODE_240P_NTSC);
+   else if(selected==2)test_mode(MODE_288P_PAL);
+   else if(selected==3){
+    clear_flag(ENFORCER_FLAG);
+    unload_vsh_plugin(4);
+    if(!switch_tests_available())status("Stock timing","Rebooting clears the timing edits from RAM.");
     else if(read_video()||inspect())status("Restore stopped",patch.error[0]?patch.error:"Output query failed");
-    else {int rc=switch_stock(&flow,state.displayMode.resolution,analog());status(rc?"Restore stopped":"Stock timing restored",rc?flow.error:"Stock timing records verified and SD mode transition completed.");}
-   }else if(selected==3)diagnostics();
-   else if(selected==4){int rc=inspect();status(rc?"Memory unavailable":"Memory checked",rc?patch.error:"All target records are recognized. No memory writes performed.");}
+    else {int rc=switch_stock(&flow,state.displayMode.resolution,analog());status(rc?"Restore stopped":"Stock timing restored",rc?flow.error:"Stock timing restored and background enforcer stopped.");}
+   }else if(selected==4)diagnostics();
+   else if(selected==5){int rc=inspect();status(rc?"Memory unavailable":"Memory checked",rc?patch.error:"All target records are recognized. No memory writes performed.");}
    else break;
    next_memory_poll=0;
   }
  }
  if(flow.pending)(void)switch_revert(&flow);
  app_log("Exit; pending_recovery=%d",flow.pending);
+ clear_flag(APP_ACTIVE_FLAG);
  (void)ioPadEnd();(void)cellSysutilUnregisterCallback(0);
  if(log_fd>=0)(void)sysLv2FsClose(log_fd);
  /* Keep GPU-visible allocations alive through process teardown. */

@@ -39,8 +39,9 @@ int switch_begin(switch_flow *f,int family,unsigned current,int analog)
  if(!switch_tests_available())return fail(f,"Timing tests disabled after signal loss and console freeze. Reboot restores stock RAM.");
  f->error[0]=0;
  f->patch->error[0]=0;
- if(family<0||family>1)return fail(f,"Invalid timing family");
- if(select_modes(f,family?5:4,current,analog))return -1;
+ if(family<0||family>2)return fail(f,"Invalid timing family");
+ unsigned target_mode = (family==1)?5:4;
+ if(select_modes(f,target_mode,current,analog))return -1;
  if(patch_snapshot(f->patch))return fail(f,f->patch->error);
  f->pending=1;
  /* Leave the candidate's profile before patching it; returning to it must

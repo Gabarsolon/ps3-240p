@@ -100,9 +100,11 @@ int ioPadGetData(int port,padData *p)
   else if(pad_calls==5||pad_calls==7)p->BTN_CIRCLE=1;
   pad_calls++;assert(pad_calls<=8);
  }else if(scenario==8){
-  if(pad_calls==0)p->BTN_CROSS=1;
-  else if(pad_calls==1||pad_calls==3)p->BTN_CIRCLE=1;
-  pad_calls++;assert(pad_calls<=4);
+  /* 7-item menu: DOWN, release, DOWN reach the PAL 288p test (item 2). */
+  if(pad_calls==0||pad_calls==2)p->BTN_DOWN=1;
+  else if(pad_calls==3)p->BTN_CROSS=1;
+  else if(pad_calls==5||pad_calls==7)p->BTN_CIRCLE=1;
+  pad_calls++;assert(pad_calls<=8);
  }else if(scenario>=9&&scenario<=14){
   /* Closing Circle remains held for two polls, then release and a new
    * Circle press. Neither of the first two polls may exit the app. */
@@ -138,9 +140,9 @@ int main(int argc,char **argv)
    else assert(mock_time-overlay_started>=3000000);
   }
  }else if(scenario==8){
-  assert(rc==0&&exit_code==0&&configures==1&&backend==0&&!patch.ready);
+   assert(rc==0&&exit_code==0&&configures==1&&backend==0&&!patch.ready);
   assert(strstr(log_capture,"Blocked timing action family=1; no timing/output changes"));
-  assert(flips==5&&pad_calls==4);
+  assert(flips==9&&pad_calls==8);
  }else if(scenario==0||scenario==2){
   assert(rc==0&&exit_code==0&&flips==2&&configures==1);
   assert(completed_frames==2&&backend==0&&!patch.ready&&!patch.error[0]);

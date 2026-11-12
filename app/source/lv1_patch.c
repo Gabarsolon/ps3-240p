@@ -80,9 +80,10 @@ int patch_resolve(patch_context *c)
    if(translate(pages,count,va,&c->address[index]))return fail(c,"Timing page unavailable/ambiguous");
    c->stock[index]=j<3?meta[j]:raster[j-3];
    uint64_t value=j<3?candidate_meta[j]:raster[j-3];
-   if(j>=5&&j<=9){
+   if(j>=3&&j<=9){
     int w=j-3;uint64_t repl=candidate_raster[w];
-    if(w==4)value=(value&UINT64_C(0xffffffff))|(repl&UINT64_C(0xffffffff00000000));
+    if(w==1&&(profile==2||profile==3))value=raster[1];
+    else if(w==4)value=(value&UINT64_C(0xffffffff))|(repl&UINT64_C(0xffffffff00000000));
     else if(w==5)value=(value&UINT64_C(0xffffffff00000000))|(repl&UINT64_C(0xffffffff));
     else if(w==6)value=(value&UINT64_C(0xffffffff))|(repl&UINT64_C(0xffffffff00000000));
     else value=repl;
@@ -232,8 +233,11 @@ rollback:
 int patch_apply(patch_context *c,int family)
 {
  uint64_t target[PATCH_WORDS];
- if(family<0||family>1)return fail(c,"Invalid timing family");
- for(int i=0;i<PATCH_WORDS;i++)target[i]=c->family[i]==(unsigned)family?c->candidate[i]:c->stock[i];
+ if(family<0||family>2)return fail(c,"Invalid timing family");
+ for(int i=0;i<PATCH_WORDS;i++){
+  if(family==2)target[i]=c->candidate[i];
+  else target[i]=c->family[i]==(unsigned)family?c->candidate[i]:c->stock[i];
+ }
  return transaction(c,target);
 }
 int patch_restore(patch_context *c){return transaction(c,c->stock);}

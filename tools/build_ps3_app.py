@@ -91,10 +91,11 @@ def main(sdk_path: str):
     run(sfo_tool, "set", sfo_dst, f"APP_VER={APP_VERSION}", "--out", sfo_dst)
     run(sfo_tool, "validate", sfo_dst)
 
-    # Copy Icon
+    # Copy Icon & Extras
     if icon_src.exists():
         shutil.copyfile(icon_src, icon_dst)
     shutil.copyfile(ROOT / "app" / "BuzzBridge-LICENSE", usr_dir / "BuzzBridge-LICENSE.txt")
+    shutil.copyfile(ROOT / "plugin" / "vsh_240p.sprx", usr_dir / "vsh_240p.sprx")
 
     # 5. Build and Finalize PKG
     print("\n=== [5/5] Building & Finalizing PS3 PKG ===")
@@ -112,6 +113,7 @@ def main(sdk_path: str):
     assert "PARAM.SFO" in packaged
     assert "ICON0.PNG" in packaged
     assert "USRDIR/BuzzBridge-LICENSE.txt" in packaged
+    assert "USRDIR/vsh_240p.sprx" in packaged
     for name, data in packaged.items():
         original = (staging_dir / name).read_bytes()
         if name == "USRDIR/EBOOT.BIN":
