@@ -200,16 +200,23 @@ static int analog(void)
 }
 static int load_vsh_plugin(unsigned slot, const char *path) {
 #ifndef APP_HOST_TEST
+ int rc;
+ app_log("Cobra load begin slot=%u", slot);
  lv2syscall5(8, 0x1ee7, slot, (uint64_t)(uintptr_t)path, 0, 0);
- return_to_user_prog(int);
+ rc=(int)p1; /* r3 holds the syscall result; register_passing_1 reads r4 */
+ app_log("Cobra load slot=%u rc=%08x", slot, (unsigned)rc);
+ return rc;
 #else
  (void)slot; (void)path; return 0;
 #endif
 }
 static int unload_vsh_plugin(unsigned slot) {
 #ifndef APP_HOST_TEST
+ int rc;
  lv2syscall2(8, 0x1ee8, slot);
- return_to_user_prog(int);
+ rc=(int)p1;
+ app_log("Cobra unload slot=%u rc=%08x", slot, (unsigned)rc);
+ return rc;
 #else
  (void)slot; return 0;
 #endif
@@ -228,21 +235,80 @@ static void clear_flag(const char *path) {
  (void)path;
 #endif
 }
+static int cobra_mapi(unsigned op, uint64_t a, uint64_t b, uint64_t c, uint64_t d) {
+#ifndef APP_HOST_TEST
+ lv2syscall6(8, 0x7777, op, a, b, c, d);
+ return_to_user_prog(int);
+#else
+ (void)op;(void)a;(void)b;(void)c;(void)d;
+ return (int)0x80010006u;
+#endif
+}
+/* Slot scan (pattern from buzz-pad-bridge autoload/app.c): PS3MAPI op 0x47
+ * reports the resident plugin name/path per slot, 0x80010006 = empty.
+ * Returns the slot with a resident vsh_240p plugin if any, else the first
+ * free slot, else 0. */
+static unsigned find_slot(unsigned *resident) {
+#ifndef APP_HOST_TEST
+ static char name[96], path[256];
+ unsigned free_slot=0;*resident=0;
+ for (unsigned s=1;s<=6;s++) {
+  name[0]=0;path[0]=0;
+  int rc=cobra_mapi(0x47, s, (uint64_t)(uintptr_t)name, (uint64_t)(uintptr_t)path, 0);
+  if (rc && rc != (int)0x80010006u) {app_log("VSH slot %u inspect rc=%08x", s, (unsigned)rc);continue;}
+  app_log("VSH slot %u name=%s path=%s", s, name, path);
+  if (name[0] && strstr(name, "vsh_240p")) {*resident=s;return s;}
+  if (!name[0] && !path[0] && !free_slot) free_slot=s;
+ }
+ return free_slot;
+#else
+ (void)resident;return 0;
+#endif
+}
+static void unload_enforcer(void) {
+#ifndef APP_HOST_TEST
+ static char name[96], path[256];
+ unsigned found=0;
+ for (unsigned s=1;s<=6;s++) {
+  name[0]=0;path[0]=0;
+  int rc=cobra_mapi(0x47, s, (uint64_t)(uintptr_t)name, (uint64_t)(uintptr_t)path, 0);
+  if (rc==0 && name[0] && strstr(name, "vsh_240p")) {unload_vsh_plugin(s);found++;}
+ }
+ if (!found)app_log("Enforcer not resident");
+#else
+ (void)unload_vsh_plugin;(void)cobra_mapi;
+#endif
+}
 static void deploy_enforcer(void) {
 #ifndef APP_HOST_TEST
- sysFSStat st;
- if (sysLv2FsStat("/dev_hdd0/plugins/vsh_240p.sprx", &st) != 0) {
-  int in_fd = -1, out_fd = -1;
-  if (sysLv2FsOpen("/dev_hdd0/game/PS3240P01/USRDIR/vsh_240p.sprx", SYS_O_RDONLY, &in_fd, 0, NULL, 0) == 0) {
-   if (sysLv2FsOpen("/dev_hdd0/plugins/vsh_240p.sprx", SYS_O_WRONLY | SYS_O_CREAT | SYS_O_TRUNC, &out_fd, 0777, NULL, 0) == 0) {
-    char buf[2048]; uint64_t rd = 0, wr = 0;
-    while (sysLv2FsRead(in_fd, buf, sizeof(buf), &rd) == 0 && rd > 0) {
-     sysLv2FsWrite(out_fd, buf, rd, &wr);
-    }
-    sysLv2FsClose(out_fd);
+ /* Own install dir (APP_ID from build_ps3_app.py). A stale path here made
+  * every deploy a silent no-op, and an existing 0-byte target blocked retry. */
+ sysFSStat st, src;
+ if (sysLv2FsStat("/dev_hdd0/plugins/vsh_240p.sprx", &st) == 0 &&
+     sysLv2FsStat("/dev_hdd0/game/PS240P001/USRDIR/vsh_240p.sprx", &src) == 0 &&
+     st.st_size == src.st_size) {
+  app_log("Enforcer plugin already current (%u bytes)", (unsigned)st.st_size);
+  return;
+ }
+ if (sysLv2FsStat("/dev_hdd0/game/PS240P001/USRDIR/vsh_240p.sprx", &src) != 0) {
+  app_log("Enforcer deploy: USRDIR source missing");
+  return;
+ }
+ int in_fd=-1, out_fd=-1;
+ if (sysLv2FsOpen("/dev_hdd0/game/PS240P001/USRDIR/vsh_240p.sprx", SYS_O_RDONLY, &in_fd, 0, NULL, 0) == 0) {
+  if (sysLv2FsOpen("/dev_hdd0/plugins/vsh_240p.sprx", SYS_O_WRONLY | SYS_O_CREAT | SYS_O_TRUNC, &out_fd, 0777, NULL, 0) == 0) {
+   char buf[2048]; uint64_t rd=0, wr=0;
+   while (sysLv2FsRead(in_fd, buf, sizeof(buf), &rd) == 0 && rd > 0) {
+    (void)sysLv2FsWrite(out_fd, buf, rd, &wr);
    }
-   sysLv2FsClose(in_fd);
+   sysLv2FsClose(out_fd);
   }
+  sysLv2FsClose(in_fd);
+ }
+ if (sysLv2FsStat("/dev_hdd0/plugins/vsh_240p.sprx", &st) == 0 && st.st_size == src.st_size) {
+  app_log("Enforcer deployed to /dev_hdd0/plugins (%u bytes)", (unsigned)st.st_size);
+ } else {
+  app_log("Enforcer deploy FAILED");
  }
 #endif
 }
@@ -459,10 +525,13 @@ int main(void)
      read_video();
      write_flag(ENFORCER_FLAG);
      deploy_enforcer();
-     load_vsh_plugin(4, "/dev_hdd0/plugins/vsh_240p.sprx");
+     unsigned resident=0, slot=find_slot(&resident);
+     if (resident) app_log("Enforcer already resident in slot %u", resident);
+     else if (!slot) {app_log("No free VSH plugin slot");clear_flag(ENFORCER_FLAG);}
+     else if (load_vsh_plugin(slot, "/dev_hdd0/plugins/vsh_240p.sprx")) clear_flag(ENFORCER_FLAG);
      status("240p/288p Enforcer Active",
       "Mode 4 and Mode 5 timings patched in RAM.\n"
-      "Enforcer armed and running in VSH Slot 4.\n\n"
+      "Enforcer armed and running in VSH.\n\n"
       "- A 576i fallback is corrected to Mode 4 (240p) after ~2 s.\n"
       "- 480i and HD modes are never touched.\n"
       "- Passive while this app is open.\n\n"
@@ -474,7 +543,7 @@ int main(void)
    else if(selected==2)test_mode(MODE_288P_PAL);
    else if(selected==3){
     clear_flag(ENFORCER_FLAG);
-    unload_vsh_plugin(4);
+    unload_enforcer();
     if(!switch_tests_available())status("Stock timing","Rebooting clears the timing edits from RAM.");
     else if(read_video()||inspect())status("Restore stopped",patch.error[0]?patch.error:"Output query failed");
     else {int rc=switch_stock(&flow,state.displayMode.resolution,analog());status(rc?"Restore stopped":"Stock timing restored",rc?flow.error:"Stock timing restored and background enforcer stopped.");}

@@ -89,19 +89,19 @@ static int flag_exists(const char *path) {
     return sysLv2FsStat(path, &st) == 0;
 }
 
-static void log_write(const char *buf, unsigned len) {
-    sysFSStat st;
-    int oflags = SYS_O_WRONLY | SYS_O_CREAT;
-    if (sysLv2FsStat(LOG_PATH, &st) == 0 && st.st_size > LOG_LIMIT) oflags |= SYS_O_TRUNC;
-    else oflags |= SYS_O_APPEND;
-    int fd = -1;
-    if (sysLv2FsOpen(LOG_PATH, oflags, &fd, 0666, NULL, 0) != 0) return;
-    uint64_t wr = 0;
-    (void)sysLv2FsWrite(fd, buf, len, &wr);
-    (void)sysLv2FsClose(fd);
+static int log_fd=-1;
+static unsigned log_bytes;
+
+/* Logging follows the proven ps3buzz_vsh pattern (buzz-pad-bridge
+ * ps3/plugin/autoload/vsh.c): open once with O_TRUNC, keep the descriptor.
+ * The earlier per-line open with O_APPEND created the file but wrote zero
+ * bytes and wedged the dev_hdd0 write path for every other writer. */
+static void log_open(void) {
+    (void)sysLv2FsOpen(LOG_PATH, SYS_O_WRONLY | SYS_O_CREAT | SYS_O_TRUNC, &log_fd, 0666, NULL, 0);
 }
 
 static void log_line(const char *event, uint32_t code) {
+    if (log_fd < 0 || log_bytes > 65500u) return;
     char buf[96];
     char *p = buf;
     uint64_t us = sys_time_get_system_time();
@@ -118,7 +118,8 @@ static void log_line(const char *event, uint32_t code) {
     static const char hexdig[] = "0123456789abcdef";
     for (int i = 28; i >= 0; i -= 4) *p++ = hexdig[(code >> i) & 0xFu];
     *p++ = '\n';
-    log_write(buf, (unsigned)(p - buf));
+    uint64_t wr = 0;
+    if (sysLv2FsWrite(log_fd, buf, (uint64_t)(p - buf), &wr) == 0) log_bytes += (unsigned)wr;
 }
 
 static atomic_int running, started;
@@ -126,6 +127,7 @@ static sys_ppu_thread_t thread_id;
 
 static void corrector(void *arg) {
     (void)arg;
+    log_open();
     log_line("start", 0);
     for (unsigned i = 0; i < 6u && atomic_load(&running); i++) nap_ms(500);
     unsigned stable = 0, attempts = 0;
