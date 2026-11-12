@@ -117,4 +117,25 @@ static const uint64_t g_patch_288p_encoder[ENCODER_WORDS] = {
     0x3500360037003800ULL
 };
 
+/* -------------------------------------------------------------------------
+ * Declared metadata-height intent, per candidate family (NTSC, PAL).
+ *
+ * PROVEN mismatch (app/source/timing_payloads.h below): the patched raster
+ * emits 240 active lines while the metadata record still advertises the
+ * stock framebuffer height (480 NTSC / 576 PAL). The AV manager reads
+ * metadata and raster separately for placement and scaling
+ * (docs/LV1_AV_TRACE.md), so the XMB can still be laid out as a 480-line
+ * frame while only 240 lines are active - the reported stretched and cropped
+ * picture. Commit 47eb61a changed the metadata heights from 240/288 to
+ * 480/576 without recording the reason.
+ *
+ * META_HEIGHT_STOCK is today's measured behaviour (mismatch kept).
+ * META_HEIGHT_ACTIVE publishes the patched active height in the metadata
+ * record and is the next single-variable console candidate.
+ * Declaring it here keeps the mismatch from ever being accidental drift.
+ * ------------------------------------------------------------------------- */
+#define META_HEIGHT_STOCK  0
+#define META_HEIGHT_ACTIVE 1
+static const int g_meta_height_mode[2] = { META_HEIGHT_STOCK, META_HEIGHT_STOCK };
+
 #endif /* TIMING_PAYLOADS_H */

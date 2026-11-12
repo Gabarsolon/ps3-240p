@@ -23,6 +23,7 @@ def main():
              "-Wno-misleading-indentation", "-D_CRT_SECURE_NO_WARNINGS", "-Iapp/source", "-Itests"]
     for name, sources in [
         ("patch", ["tests/test_patch.c", "app/source/lv1_patch.c", "app/source/switch_flow.c"]),
+        ("raster", ["tests/test_raster.c", "tests/raster_sim.c"]),
         ("ui", ["tests/test_ui.c", "app/source/ui_layout.c"]),
         ("startup", ["tests/test_startup.c", "app/source/lv1_patch.c", "app/source/switch_flow.c", "app/source/ui_layout.c"]),
     ]:
@@ -36,6 +37,8 @@ def main():
         command = [str(exe)]
         if name == "ui":
             command.append(str(out / "pal-menu.ppm"))
+            command.append(str(out / "pattern-480.ppm"))
+            command.append(str(out / "pattern-240.ppm"))
         subprocess.run(command, cwd=ROOT, check=True)
     if args.firmware:
         # Compare generated plans against the private input without copying any

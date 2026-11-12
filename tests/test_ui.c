@@ -31,5 +31,38 @@ int main(int argc,char **argv)
   for(int i=0;i<result.pages;i++){v.page=i;assert(!ui_render(&l,&v,&canvas,&result));}
   assert(p[0]==0x12345678&&p[w*h+1]==0x12345678);free(p);
  }
- puts("PASS: menu selection and wrapped text inside overscan margins at SD/HD, 4:3/16:9; framebuffer guards intact");return 0;
+ /* Geometry pattern: equal bars, centred square, safe box, magenta band. */
+ {
+  int w=720,h=480,content=240;uint32_t *p=malloc((size_t)w*h*4);assert(p);
+  ui_canvas canvas={p,w,NULL,NULL};
+  assert(!ui_render_pattern(&canvas,w,h,content));
+  /* Alternating bars: even bars white, odd bars black, equal widths. */
+  for(int i=0;i<16;i++)assert(p[4*w+i*(w/16)+4]==((i&1)?0xff000000u:0xffffffffu));
+  /* Magenta band below the content marks what a cropped raster would hide. */
+  assert(p[content*w+w/2]==0xffff00ffu);
+  assert(p[(h-1)*w+w/2]==0xffff00ffu);
+  /* Centred square outline is cyan on the bar field. */
+  int side=content/2,sx=(w-side)/2,sy=(content-side)/2;
+  assert(p[sy*w+sx]==0xff40ffffu);
+  assert(p[(sy+side-1)*w+sx+side-1]==0xff40ffffu);
+  /* Safe box stays inside the content area. */
+  int mx=(w*11+99)/100,my=(content*12+99)/100;
+  assert(mx>0&&my>0&&2*mx<w&&2*my<content);
+  assert(p[my*w+mx]==0xff40ff40u);
+  /* The whole content area is painted, no background leak. */
+  int painted=0;for(int i=0;i<content;i++)for(int j=0;j<w;j++)if(p[i*w+j]!=UI_BACKGROUND)painted++;
+  assert(painted==content*w);
+  if(argc>2)save_ppm(argv[2],p,w,h);
+  free(p);
+  /* A pure 240-line pattern fills its canvas exactly. */
+  uint32_t *q=malloc((size_t)720*240*4);assert(q);
+  ui_canvas c2={q,720,NULL,NULL};
+  assert(!ui_render_pattern(&c2,720,240,240));
+  assert(q[239*720+360]!=0xffff00ffu);
+  if(argc>3)save_ppm(argv[3],q,720,240);
+  free(q);
+ }
+ puts("PASS: menu selection and wrapped text inside overscan margins at SD/HD, 4:3/16:9; framebuffer guards intact");
+ puts("PASS: geometry pattern renders equal bars, centred square, safe box and magenta crop band");
+ return 0;
 }

@@ -23,4 +23,6 @@ typedef struct {int pages,page,first,last,selection_visible,text_lines,body_top,
 void ui_layout_init(ui_layout *,int width,int height,int wide,int interlaced);
 void ui_filter_interlaced(ui_canvas *,int width,int height);
 int ui_render(const ui_layout *,const ui_view *,ui_canvas *,ui_result *);
+/* Geometry pattern: content_height rows of pattern, magenta below it. */
+int ui_render_pattern(ui_canvas *,int width,int height,int content_height);
 #endif

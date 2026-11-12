@@ -197,6 +197,42 @@ int ui_render(const ui_layout *base,const ui_view *v,ui_canvas *c,ui_result *r)
  return 0;
 }
 
+/* Geometry test pattern for measuring stretch and crop on the display.
+ * Equal-width alternating bars expose horizontal stretch, the centred square
+ * exposes unequal horizontal/vertical scaling, the green box repeats the
+ * project's own 11%/12% safe margins, and the magenta band under the content
+ * marks the area that a cropped low-line raster would hide. */
+static void outline(ui_canvas *c,int x,int y,int w,int h,uint32_t color)
+{
+ if(w<2||h<2)return;
+ rect(c,x,y,w,1,color);rect(c,x,y+h-1,w,1,color);
+ rect(c,x,y,1,h,color);rect(c,x+w-1,y,1,h,color);
+}
+int ui_render_pattern(ui_canvas *c,int width,int height,int content_height)
+{
+ if(!c||!c->pixels||width<64||height<64||width>1920||height>1080)return -1;
+ int content=content_height<64?64:(content_height>height?height:content_height);
+ rect(c,0,0,width,height,0xffff00ffu);
+ int bars=16,bar=width/bars;
+ for(int i=0;i<bars;i++)rect(c,i*bar,0,bar,content,(i&1)?0xff000000u:0xffffffffu);
+ for(int i=1;i<4;i++){
+  rect(c,0,(content*i)/4,width,1,0xffffc040u);
+  rect(c,(width*i)/4,0,1,content,0xff40c0ffu);
+ }
+ int margin_x=(width*11+99)/100,margin_y=(content*12+99)/100;
+ if(margin_x>0&&margin_y>0&&2*margin_x<width&&2*margin_y<content)
+  outline(c,margin_x,margin_y,width-2*margin_x,content-2*margin_y,0xff40ff40u);
+ int side=content/2;if(side<32)side=32;if(side>width-2)side=width-2;
+ outline(c,(width-side)/2,(content-side)/2,side,side,0xff40ffffu);
+ rect(c,width/2-8,content/2,17,1,0xffffff00u);
+ rect(c,width/2,content/2-8,1,17,0xffffff00u);
+ rect(c,0,0,16,1,0xffffffffu);rect(c,0,0,1,16,0xffffffffu);
+ rect(c,width-16,0,16,1,0xffffffffu);rect(c,width-1,0,1,16,0xffffffffu);
+ rect(c,0,content-1,16,1,0xffffffffu);rect(c,0,content-16,1,16,0xffffffffu);
+ rect(c,width-16,content-1,16,1,0xffffffffu);rect(c,width-1,content-16,1,16,0xffffffffu);
+ return 0;
+}
+
 /* Symmetric [1 2 1]/4 in numeric XRGB, independent of PPU/host byte order.
  * Read original rows with one saved scanline; replicate top/bottom edges.
  * Only software memory is read/modified, never the RSX display buffers.

@@ -32,12 +32,14 @@ SYS_PROCESS_PARAM(1001,0x100000);
 #define LOG_PATH "/dev_hdd0/tmp/ps3_240p.log"
 #define APP_ACTIVE_FLAG "/dev_hdd0/tmp/240p_app.active"
 #define ENFORCER_FLAG "/dev_hdd0/tmp/240p_enforcer.on"
+#define META240_FLAG "/dev_hdd0/tmp/240p_meta240.on"
 static uint32_t *buffers[2],*software,offsets[2],pitch,label_value;
 static videoState state;
 static videoDeviceInfo device;
 static videoResolution resolution;
 static ui_layout layout;
 static ui_result drawn;
+static int pattern_mode;
 static patch_context patch;
 static patch_cached_video cached_video;
 static switch_flow flow;
@@ -221,6 +223,13 @@ static int unload_vsh_plugin(unsigned slot) {
  (void)slot; return 0;
 #endif
 }
+static int flag_present(const char *path) {
+#ifndef APP_HOST_TEST
+ sysFSStat st;return sysLv2FsStat(path,&st)==0;
+#else
+ (void)path;return 0;
+#endif
+}
 static void write_flag(const char *path) {
 #ifndef APP_HOST_TEST
  int fd=-1;if(sysLv2FsOpen(path,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&fd,0666,NULL,0)==0)sysLv2FsClose(fd);
@@ -358,6 +367,7 @@ static int frame(const ui_view *view)
  hash=(hash^resolution.height)*UINT64_C(1099511628211);
  int eff_h=active_raster_height();
  hash=(hash^(unsigned)eff_h)*UINT64_C(1099511628211);
+ hash=(hash^(unsigned)pattern_mode)*UINT64_C(1099511628211);
  if(hash!=presented_hash){hash_frames=0;presented_hash=hash;}
  if(hash_frames>=2&&!os_active()){usleep(16000);return 0;}
  if(drain())return -1;
@@ -366,7 +376,11 @@ static int frame(const ui_view *view)
  ui_layout_init(&layout,resolution.width,eff_h,state.displayMode.aspect==VIDEO_ASPECT_16_9,is_interlaced);
  for(unsigned i=0;i<(unsigned)resolution.width*resolution.height;i++)software[i]=UI_BACKGROUND;
  ui_canvas canvas={software,resolution.width,NULL,NULL};
- if((!os_active()||!submitted_frames)&&ui_render(&layout,view,&canvas,&drawn))return -1;
+ if(pattern_mode){
+  /* Pattern fills the public buffer: the low-line content sits on top, the
+   * magenta band marks the area a cropped 240-line raster would hide. */
+  if(ui_render_pattern(&canvas,resolution.width,resolution.height,eff_h<64?64:eff_h))return -1;
+ } else if((!os_active()||!submitted_frames)&&ui_render(&layout,view,&canvas,&drawn))return -1;
  memcpy(buffers[front],software,(size_t)pitch*resolution.height);
  if(submitted_frames<2){
   unsigned ink=0,first=0;
@@ -499,6 +513,7 @@ int main(void)
   "Test PAL 288p 50Hz",
   "Restore Stock Timing (Stop Enforcer)",
   "Output / diagnostics",
+  "Geometry pattern (measure crop)",
   "Recheck timing memory",
   "Exit to XMB"
  };
@@ -507,16 +522,25 @@ int main(void)
  while(!exiting){
   if(!os_active()&&now()>=next_memory_poll){cached_ntsc=patch_state(&patch,0);cached_pal=patch_state(&patch,1);next_memory_poll=now()+1000000;}
   char title[200];snprintf(title,sizeof(title),"Analog SD timing / v1.2.0\nPAL-60: %s  NTSC: %s",memory_state(cached_pal),memory_state(cached_ntsc));
-  ui_view view={0};view.title=title;view.items=items;view.count=7;view.selected=selected;view.page=-1;
+  ui_view view={0};view.title=title;view.items=items;view.count=8;view.selected=selected;view.page=-1;
   if(frame(&view)){app_log("Frame loop stopped: exit_request=%d gpu_ok=%d",exiting,gpu_ok);if(!exiting)outcome=1;break;}
   /* Complete the first pair before accepting a choice, including quit. */
   if(submitted_frames<2||completed_frames<2)continue;
   if(now()>=next_heartbeat){app_log("Menu alive: frames=%u completed=%u system_menu=%d",submitted_frames,completed_frames,system_menu);next_heartbeat=now()+15000000;}
   unsigned key=input();
+  if(pattern_mode){
+   if(key&(CIRCLE|CROSS)){pattern_mode=0;app_log("Geometry pattern closed");}
+   continue;
+  }
   if(key&CIRCLE)break;
-  if(key&UP)selected=(selected+6)%7;if(key&DOWN)selected=(selected+1)%7;
+  if(key&UP)selected=(selected+7)%8;if(key&DOWN)selected=(selected+1)%8;
   if(key&CROSS){
    if(selected==0){
+    /* Single-variable geometry experiment: with /dev_hdd0/tmp/240p_meta240.on
+     * present, the metadata record also publishes the patched 240-line height
+     * instead of the stock 480/576 framebuffer height. */
+    patch.meta_height_mode=flag_present(META240_FLAG)?1:0;
+    app_log("Metadata height mode=%d (1 = patched active height)", patch.meta_height_mode);
     if(read_video()||inspect())status("Apply Error",patch.error[0]?patch.error:"Output query failed");
     else if(switch_begin(&flow, MODE_ALL_SD, state.displayMode.resolution, analog())){
      status("Apply Error", flow.error[0]?flow.error:"Failed to apply 240p/288p");
@@ -548,7 +572,8 @@ int main(void)
     else if(read_video()||inspect())status("Restore stopped",patch.error[0]?patch.error:"Output query failed");
     else {int rc=switch_stock(&flow,state.displayMode.resolution,analog());status(rc?"Restore stopped":"Stock timing restored",rc?flow.error:"Stock timing restored and background enforcer stopped.");}
    }else if(selected==4)diagnostics();
-   else if(selected==5){int rc=inspect();status(rc?"Memory unavailable":"Memory checked",rc?patch.error:"All target records are recognized. No memory writes performed.");}
+   else if(selected==5){pattern_mode=1;app_log("Geometry pattern shown; content=%u lines",(unsigned)active_raster_height());}
+   else if(selected==6){int rc=inspect();status(rc?"Memory unavailable":"Memory checked",rc?patch.error:"All target records are recognized. No memory writes performed.");}
    else break;
    next_memory_poll=0;
   }

@@ -24,6 +24,10 @@ typedef struct {
  uint32_t video_context;
  unsigned family[PATCH_WORDS];
  int ready,have_saved,video_ready;
+ /* 0 = metadata keeps the stock framebuffer height (current behaviour),
+  * 1 = metadata publishes the patched active height (240). Single-variable
+  * experiment for the stretched/cropped XMB; see timing_payloads.h. */
+ int meta_height_mode;
  char error[160];
 } patch_context;
 int patch_resolve(patch_context *);

@@ -238,6 +238,18 @@ int patch_apply(patch_context *c,int family)
   if(family==2)target[i]=c->candidate[i];
   else target[i]=c->family[i]==(unsigned)family?c->candidate[i]:c->stock[i];
  }
+ /* Single-variable experiment: publish the patched active height in the
+  * metadata record. Without it the metadata keeps the stock framebuffer
+  * height (480/576) while the raster emits 240 active lines, and the AV
+  * manager then places the picture as if it were the taller frame. */
+ if(c->meta_height_mode){
+  for(int p=0;p<4;p++){
+   int height_index=p*10+2,raster_index=p*10+5;
+   if(family!=2&&c->family[height_index]!=(unsigned)family)continue;
+   uint32_t active=(uint32_t)((c->candidate[raster_index]>>32)&0xffffu)+1u;
+   target[height_index]=(target[height_index]&UINT64_C(0xffffffff))|((uint64_t)active<<32);
+  }
+ }
  return transaction(c,target);
 }
 int patch_restore(patch_context *c){return transaction(c,c->stock);}
