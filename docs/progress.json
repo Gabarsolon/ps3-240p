@@ -1,6 +1,6 @@
 {
-  "updated": "2026-11-11",
-  "note": "v1.1.3 owner reports PS overlay freezes before a choice; log shows app alive with system_menu=1 and no timing test. v1.1.4 continues frozen-scene flips like the SDK sample, handles drawing callbacks, suppresses input until release, and permits Quit during OS-paused GPU waits. Fifteen entry-point simulations and native/package checks pass; console overlay fix unverified. Timing tests stay disabled.",
+  "updated": "2026-11-13",
+  "note": "v1.2.2 release validation passed: patch/raster/UI tests, 17 startup scenarios, helper artifact audit, all 44 firmware target comparisons, finalized PKG members and checksums. The release preserves the exact owner-tested PKG. Owner confirms XMB, PS1 (ps1_emu.self), RetroArch's picture/PS menu and Super Mario All-Stars. Electrical progressive-sync and PAL geometry verification remain open.",
   "stages": [
     {
       "name": "Static analysis & claim verification (hypercalls, netemu, RSX attr 0x100)",

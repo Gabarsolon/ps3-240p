@@ -55,16 +55,18 @@ def main():
         dll = out / ("patch-audit.dll" if os.name == "nt" else "patch-audit.so")
         subprocess.run(flags + ["-shared", "app/source/lv1_patch.c", "tests/audit_plan.c", "-o", str(dll)], cwd=ROOT, check=True)
         audit = ctypes.CDLL(str(dll))
+        audit.audit_count.restype = ctypes.c_int
         audit.audit_word.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint64)]
         with args.firmware.open("rb") as stream:
             elf = ELFFile(stream)
             segments = [(s["p_vaddr"], s.data()) for s in elf.iter_segments() if s["p_type"] == "PT_LOAD"]
-        for i in range(42):
+        count = audit.audit_count()
+        for i in range(count):
             va, word = ctypes.c_uint32(), ctypes.c_uint64()
             assert audit.audit_word(i, ctypes.byref(va), ctypes.byref(word)) == 0
             data = next(data[va.value-base:va.value-base+8] for base, data in segments if base <= va.value < base+len(data))
             assert int.from_bytes(data, "big") == word.value, f"Stock target {i} differs from private firmware"
-        print("PASS: all 42 stock timing words match the private 4.93 ELF")
+        print(f"PASS: all {count} stock timing/code words match the private 4.93 ELF")
 
 if __name__ == "__main__":
     main()

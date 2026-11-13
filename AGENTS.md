@@ -1,4 +1,4 @@
-# CLAUDE.md: ps3-240p
+# AGENTS.md: ps3-240p
 
 Research project: native 240p/288p analog output on a PS3 (CFW Evilnat 4.93 + Cobra, slim CECH-25xx; fat models for comparison). Owner: Gabarsolon (hobbyist, own console).
 

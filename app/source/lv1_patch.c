@@ -98,52 +98,29 @@ int patch_resolve(patch_context *c)
   c->candidate[index]=family?g_patch_288p_encoder[0]:g_patch_240p_encoder[0];
   c->family[index]=(unsigned)family;
  }
- /* RSX CRTC 2.0 vertical scale factor, in the 4.93 sysmgr_ss text that
-  * programs the display controller. PROVEN from the live 4.93 image and
-  * from the matching module bytes: FUN_80002ca4 writes the vertical scale
-  * factor to CRTC 0x68898. In the mismatch path (source height differs
-  * from the raster active height, which is exactly our 240p case) it
-  * computes 0x10000000 / scale, and the firmware's scale field is 1 for a
-  * 1:1 source/raster pair, so the CRTC reads the source 1:1 and scans
-  * only the first raster lines: the cropped, stretched picture.
-  * The experiment changes the numerator to 0x08000000 (0.5), so the whole
-  * source is reduced into the raster. The exact-fit path (the stock
-  * 480i/576i modes) is not touched.
-  * The word is verified at run time: a live image that differs from the
-  * 4.93 build is refused instead of patched. */
- if(translate(pages,count,SCALE_FACTOR_VA,&c->address[index]))
-  return fail(c,"Vertical scale factor page unavailable/ambiguous");
- uint64_t scale_live=read64(c,c->address[index]);
- if(scale_live==STOCK_SCALE_FACTOR_WORD){
-  c->stock[index]=scale_live;
-  c->candidate[index]=c->scaler_mode?PATCH_SCALE_FACTOR_WORD:scale_live;
- }else if(scale_live==PATCH_SCALE_FACTOR_WORD){
-  c->stock[index]=STOCK_SCALE_FACTOR_WORD;c->candidate[index]=PATCH_SCALE_FACTOR_WORD;
- }else{
-  if(c->scaler_mode)return fail(c,"Vertical scale factor instruction not recognised");
-  c->stock[index]=scale_live;c->candidate[index]=scale_live;
- }
- c->family[index]=2;
- index++;
- if(c->log)c->log("Vertical scale factor word %016llx -> %016llx",
-  (unsigned long long)scale_live,(unsigned long long)c->candidate[index-1]);
- /* Live AV source descriptors (read only). The per-mode "scale" field that
-  * feeds the vertical scale factor lives in these tables; logging them
-  * proves what the firmware thinks the source/raster ratio is. The 8-byte
-  * words at descriptor offsets 0x00, 0x08 and 0x10 cover the six 32-bit
-  * fields of each 0x18-byte descriptor; the scale is the low half of the
-  * word at offset 0x08. */
- c->scale_probe_ready=0;
- for(int t=0;t<2;t++){
-  uint32_t base=t?0xc000af70u:0xc000af48u;
-  for(int e=0;e<SCALE_PROBE_ENTRIES;e++){
-   for(int w=0;w<3;w++){
-    uint64_t pa=0;
-    if(translate(pages,count,base+(uint32_t)(e*0x18)+8u*(uint32_t)w,&pa))c->scale_probe[t][e][w]=0;
-    else c->scale_probe[t][e][w]=read64(c,pa);
-   }
-   if(c->scale_probe[t][e][1])c->scale_probe_ready=1;
+ /* Flag-gated scaler experiment. Verified instruction locations do not
+  * prove register semantics or execution; see timing_payloads.h and
+  * docs/GEOMETRY_STATUS_2026-11-13.md. Unknown live code is refused. */
+ struct {uint32_t va;uint64_t stock;uint64_t patch;const char *name;} code[2]={
+  {VSCALE_ENABLE_VA,STOCK_VSCALE_ENABLE_WORD,PATCH_VSCALE_ENABLE_WORD,"vertical scaler enable"},
+  {VSCALE_FACTOR_VA,STOCK_VSCALE_FACTOR_WORD,PATCH_VSCALE_FACTOR_WORD,"vertical scale factor"}};
+ for(int k=0;k<2;k++){
+  if(translate(pages,count,code[k].va,&c->address[index]))
+   return fail(c,"Vertical scaler code page unavailable/ambiguous");
+  uint64_t live=read64(c,c->address[index]);
+  if(live==code[k].stock){
+   c->stock[index]=live;
+   c->candidate[index]=c->scaler_mode?code[k].patch:live;
+  }else if(live==code[k].patch){
+   c->stock[index]=code[k].stock;c->candidate[index]=code[k].patch;
+  }else{
+   if(c->scaler_mode)return fail(c,"Vertical scaler instruction not recognised");
+   c->stock[index]=live;c->candidate[index]=live;
   }
+  c->family[index]=2;
+  index++;
+  if(c->log)c->log("%s word %016llx -> %016llx",code[k].name,
+   (unsigned long long)live,(unsigned long long)c->candidate[index-1]);
  }
  for(int i=0;i<PATCH_WORDS;i++)for(int j=0;j<i;j++)if(c->address[i]==c->address[j])
   return fail(c,"Aliased timing targets");
@@ -151,6 +128,12 @@ int patch_resolve(patch_context *c)
  if(patch_state(c,0)==STATE_UNKNOWN||patch_state(c,1)==STATE_UNKNOWN){
   c->ready=0;return fail(c,"Timing bytes differ from verified 4.93 data; reboot first");
  }
+ /* Profiles 1..4 are the metadata actually copied by the mode-setting
+  * path (private sysmgr 0x800005e4). Globals 0xc000af48/0xc000af70 hold
+  * pointers, not two arrays of runtime per-head descriptors. Capture
+  * the already verified profile records instead of walking those globals. */
+ for(int p=0;p<METADATA_PROBE_PROFILES;p++)for(int w=0;w<3;w++)
+  c->metadata_probe[p][w]=read64(c,c->address[p*10+w]);
  /* Read-only AV-service cache, independently mapped at each word. These
   * offsets are verified in the same 4.93 sysmgr image as the timing data.
   * No mapped MMIO is read, and no physical base is assumed contiguous. */
@@ -291,9 +274,8 @@ int patch_apply(patch_context *c,int family)
   else target[i]=(c->family[i]==(unsigned)family||c->family[i]==2)?c->candidate[i]:c->stock[i];
  }
  /* Single-variable experiment: publish the patched active height in the
-  * metadata record. Without it the metadata keeps the stock framebuffer
-  * height (480/576) while the raster emits 240 active lines, and the AV
-  * manager then places the picture as if it were the taller frame. */
+  * metadata record. The owner reported no geometry improvement from this
+  * A/B. A metadata/raster mismatch alone does not establish the crop cause. */
  if(c->meta_height_mode){
   for(int p=0;p<4;p++){
    int height_index=p*10+2,raster_index=p*10+5;

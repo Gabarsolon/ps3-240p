@@ -4,8 +4,8 @@
  * header text) and prints the decoded matrix, so a candidate can be judged
  * before anything is written to a console.
  *
- * Context (2026-11-12): the XMB is stretched and cropped in 240p. PROVEN
- * cause candidate: the patched raster emits 240 active lines while the
+ * Context (2026-11-12): the XMB is stretched and cropped in 240p. INFERRED
+ * earlier cause candidate: the patched raster emits 240 active lines while the
  * metadata record still advertises the stock framebuffer height (480 NTSC /
  * 576 PAL). The AV manager reads metadata and raster separately for
  * placement and scaling (docs/LV1_AV_TRACE.md).
@@ -37,14 +37,22 @@ static void check_candidate(const char *label, const uint64_t *metadata, const u
   raster_decode_metadata(stock_metadata, &sm);
   raster_decode_raster(stock_raster, &sr);
 
-  /* Progressive candidate: interlace cleared in metadata and raster. */
-  assert(m.interlace == 0);
+  /* The successful NTSC recipe retains source-field fetching. PAL still
+   * uses the older candidate and has no corresponding geometry result. */
+  if (!strcmp(label,"NTSC")) {
+    assert(m.interlace == 1);
+    assert(r.active_lines == 480 && r.total_lines == 522);
+    assert(r.active_lines / 2 == 240 && r.total_lines / 2 == 261);
+    assert(!(r.total_lines & 1));
+    assert(r.v_marker == 489 && r.v_sync_start == 488 && r.v_sync_end == 494);
+    assert((uint32_t)raster[5] == 0x00f500f2u);
+  } else assert(m.interlace == 0);
   assert(r.scan_control == 0x00010000u);
   assert(sm.interlace == 1);
   assert(sr.scan_control == 0x00030000u);
 
   /* Fewer active lines than the stock raster, same sample width. */
-  assert(r.active_lines < sr.active_lines);
+  assert(r.active_lines <= sr.active_lines);
   assert(m.width == sm.width);
   assert(m.width == 2880u);
 
@@ -98,7 +106,7 @@ int main(void)
            declared == META_HEIGHT_ACTIVE ? "active" : "stock");
   }
 
-  puts("PASS: decoded timing matrix printed; progressive candidates are internally consistent; "
+  puts("PASS: decoded timing matrix printed; field-fetch/progressive candidate dimensions checked; "
        "metadata-height intent is declared and matches the shipped payload");
   return 0;
 }

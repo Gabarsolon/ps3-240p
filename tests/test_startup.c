@@ -136,6 +136,9 @@ int main(int argc,char **argv)
   assert(rc==0&&exit_code==0&&configures==1&&uart_probes==1&&uart_probed);
   assert(!patch.ready&&backend==0&&pad_calls==8);
   assert(uart_permission==(scenario==16?0:(int)0x80010003u));
+  /* A failed resolve must not emit the old, uninitialized probe result. */
+  assert(!strstr(log_capture,"descriptor tables unavailable"));
+  assert(!strstr(log_capture,"AV metadata profile="));
   assert(strstr(log_capture,scenario==16?"probe rc=00000000 bytes=0":"probe rc=80010003 bytes=0"));
  }else if(scenario>=9&&scenario<=14){
   assert(rc==0&&exit_code==0&&configures==1&&overlay_opened);

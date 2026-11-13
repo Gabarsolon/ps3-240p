@@ -6,9 +6,9 @@
 
 enum PatchMode { MODE_240P_NTSC, MODE_288P_PAL, MODE_ALL_SD };
 enum PatchState { STATE_UNKNOWN=-1, STATE_STOCK, STATE_PATCHED, STATE_MIXED };
-#define PATCH_WORDS 43
+#define PATCH_WORDS 44
 #define VIDEO_PROBE_WORDS 27
-#define SCALE_PROBE_ENTRIES 4
+#define METADATA_PROBE_PROFILES 4
 typedef struct {
  uint32_t state,vid,width,height,pitch,active_lines,total_lines,scan_control;
  uint64_t raster[7];
@@ -29,15 +29,12 @@ typedef struct {
   * 1 = metadata publishes the patched active height (240). Single-variable
   * experiment for the stretched/cropped XMB; see timing_payloads.h. */
  int meta_height_mode;
- /* 0 = leave the RSX CRTC 2.0 vertical scaler alone (cropped picture),
-  * 1 = patch the AV service so the whole source is scaled into the raster.
-  * See the scaler notes in timing_payloads.h. */
+ /* 1 = request the experimental scaler code edits. This flag does not
+  * establish that the edits executed or that hardware scaling is active. */
  int scaler_mode;
- /* Live AV source descriptors (read only): table base, entry, and the
-  * three words around the per-mode "scale" field that feeds the CRTC
-  * vertical scale factor. */
- uint64_t scale_probe[2][SCALE_PROBE_ENTRIES][3];
- int scale_probe_ready;
+ /* Metadata records for profiles 1..4, captured after successful resolve.
+  * These are table RAM, not live scaler registers or per-head descriptors. */
+ uint64_t metadata_probe[METADATA_PROBE_PROFILES][3];
  char error[160];
 } patch_context;
 int patch_resolve(patch_context *);

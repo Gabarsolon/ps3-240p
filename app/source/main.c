@@ -126,21 +126,22 @@ static int inspect(void)
   * before the targets are resolved: the scaler mode changes what the
   * resolver accepts as the candidate bytes. */
  patch.meta_height_mode=flag_present(META240_FLAG)?1:0;
- patch.scaler_mode=flag_present(SCALER_FLAG)?1:0;
+ patch.scaler_mode=0; /* Retired after live register tests; use field fetching. */
  app_log("Metadata height mode=%d (1 = patched active height); scaler mode=%d",
   patch.meta_height_mode,patch.scaler_mode);
- if(patch.scale_probe_ready){
-  for(int t=0;t<2;t++)for(int e=0;e<SCALE_PROBE_ENTRIES;e++)
-   app_log("AV scale probe table=%d entry=%d words=%016llx %016llx %016llx",t,e,
-    (unsigned long long)patch.scale_probe[t][e][0],
-    (unsigned long long)patch.scale_probe[t][e][1],
-    (unsigned long long)patch.scale_probe[t][e][2]);
- }else app_log("AV scale probe: descriptor tables unavailable");
+ if(patch.scaler_mode)app_log("Scaler candidate=Y-enable mask=0x10, source-step 2.0; execution and hardware effect UNVERIFIED");
  memset(&cached_video,0,sizeof(cached_video));
  patch.read=read_mapi;patch.write=write_mapi;backend=1;
  if(patch_resolve(&patch)){
   patch.read=read_cfw;patch.write=write_cfw;backend=2;
   if(patch_resolve(&patch)){backend=0;return -1;}
+ }
+ /* Log only after resolution populated the metadata snapshot. */
+ for(int p=0;p<METADATA_PROBE_PROFILES;p++){
+  const uint64_t *m=patch.metadata_probe[p];
+  app_log("AV metadata profile=%d interlace=%u sample_multiplier=%u width_samples=%u height=%u family=%u (table RAM only)",
+   p+1,(unsigned)m[0],(unsigned)(m[1]>>32),(unsigned)m[1],
+   (unsigned)(m[2]>>32),(unsigned)m[2]);
  }
  app_log("LV1 backend=%s NTSC=%d PAL=%d",backend==1?"PS3MAPI":"CFW 8/9",patch_state(&patch,0),patch_state(&patch,1));
  if(patch_read_cached_video(&patch,&cached_video))app_log("AV cache snapshot unavailable: %s",cached_video.error);
@@ -178,11 +179,9 @@ static int drain(void)
 }
 static int active_raster_height(void)
 {
- /* With the CRTC vertical scaler enabled the whole source is reduced into
-  * the raster, so the UI must be drawn at the full source height. Without
-  * it the raster only scans the top 240 lines, so the UI is laid out for
-  * 240 lines and the source buffer is cropped instead of scaled. */
- if(patch.scaler_mode)return resolution.height;
+ /* The experiment draws the full source height so a scaling failure is
+  * visible. The flag requests code edits; it does not prove scaling works. */
+ if(patch.scaler_mode || state.displayMode.resolution==4)return resolution.height;
  if(flow.pending)return 240;
  if(patch.ready){
   if(patch_state(&patch,0)==STATE_PATCHED&&state.displayMode.resolution==4)return 240;
@@ -540,7 +539,7 @@ int main(void)
  (void)sysLv2FsMkdir("/dev_hdd0/tmp",0777);
  if(sysLv2FsOpen(LOG_PATH,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&log_fd,0666,NULL,0))log_fd=-1;
  write_flag(APP_ACTIVE_FLAG);
- app_log("PS3 240p build 1.2.0; native enabled=%u preparing=%u; timing tests ENABLED",CELL_VIDEO_OUT_OUTPUT_STATE_ENABLED,CELL_VIDEO_OUT_OUTPUT_STATE_PREPARING);
+ app_log("PS3 240p build 1.2.2; native enabled=%u preparing=%u; timing tests ENABLED",CELL_VIDEO_OUT_OUTPUT_STATE_ENABLED,CELL_VIDEO_OUT_OUTPUT_STATE_PREPARING);
  void *host=memalign(1024*1024,HOST_SIZE);
  if(!host){app_log("Startup failed: host allocation");return 1;}
  int rc=cellSysutilRegisterCallback(0,event,NULL);if(rc){app_log("Startup callback rc=%08x",(unsigned)rc);return 1;}
@@ -574,7 +573,7 @@ int main(void)
  uint64_t next_memory_poll=0;
  while(!exiting){
   if(!os_active()&&now()>=next_memory_poll){cached_ntsc=patch_state(&patch,0);cached_pal=patch_state(&patch,1);next_memory_poll=now()+1000000;}
-  char title[200];snprintf(title,sizeof(title),"Analog SD timing / v1.2.0\nPAL-60: %s  NTSC: %s",memory_state(cached_pal),memory_state(cached_ntsc));
+  char title[200];snprintf(title,sizeof(title),"Analog SD timing / v1.2.2\nPAL-60: %s  NTSC: %s",memory_state(cached_pal),memory_state(cached_ntsc));
   ui_view view={0};view.title=title;view.items=items;view.count=8;view.selected=selected;view.page=-1;
   if(frame(&view)){app_log("Frame loop stopped: exit_request=%d gpu_ok=%d",exiting,gpu_ok);if(!exiting)outcome=1;break;}
   /* Complete the first pair before accepting a choice, including quit. */
@@ -589,16 +588,8 @@ int main(void)
   if(key&UP)selected=(selected+7)%8;if(key&DOWN)selected=(selected+1)%8;
   if(key&CROSS){
    if(selected==0){
-    /* Single-variable geometry experiment: with /dev_hdd0/tmp/240p_meta240.on
-     * present, the metadata record also publishes the patched 240-line height
-     * instead of the stock 480/576 framebuffer height. */
-    /* Single-variable geometry experiments. /dev_hdd0/tmp/240p_meta240.on
-     * publishes the patched 240-line height in the metadata record.
-     * /dev_hdd0/tmp/240p_scaler.on additionally patches one instruction in
-     * the running AV service so the RSX CRTC 2.0 vertical scale factor
-     * becomes 0.5 instead of 1.0, which reduces the whole source into the
-     * 240-line raster instead of scanning only its first lines. Both flags
-     * are read inside inspect(), which re-resolves the targets. */
+    /* inspect() reads the optional metadata/scaler experiment flags.
+     * Neither flag proves the geometry fix works on the analog output. */
      if(read_video()||inspect())status("Apply Error",patch.error[0]?patch.error:"Output query failed");
     else if(switch_begin(&flow, MODE_ALL_SD, state.displayMode.resolution, analog())){
      status("Apply Error", flow.error[0]?flow.error:"Failed to apply 240p/288p");

@@ -1,67 +1,6 @@
 # ps3-240p
 
-Research and experimental homebrew for native 240p/288p over PS3 AV Multi Out on Evilnat 4.93 + Cobra.
-
-**Native low-line output remains UNKNOWN.** The owner tested the original package over SCART RGB and the screen remained at 576i. Earlier claims of proven hardware feasibility, immediate mode switching and completed waveform verification were overstated. See [the app review, evidence and remaining activation gap](docs/APP_REVIEW_2026-11-11.md).
-
-## Native application v1.1.4 (diagnostics only)
-
-Build output: `deliverables/PS3-240P.pkg` (XMB title **PS3 240p / 288p Switcher**, SFO version **01.14**, on-screen **v1.1.4**). The XMB icon uses the owner's supplied CRT artwork, fitted without stretching into a transparent 320x176 RGBA PNG; the original is retained at `app/assets/icon-source.png`.
-
-**PS-menu handling:** the owner reports that v1.1.3 freezes the OS overlay before a choice. Its log shows the app still alive with `system_menu=1`; no timing experiment ran. v1.1.4 follows the SDK system-menu sample by continuing flips of the frozen scene while OS UI is active. It tracks drawing begin/end as well as menu events, suspends app input/inspection, waits for button release on resume, and lets Quit interrupt GPU waits. Raw callback events are logged after the callback dispatcher returns. This addresses a presentation-policy difference; physical PS-menu behavior still requires owner verification.
-
-**Owner result:** after reboot, v1.1.2's menu is visible. Its 288p experiment failed: the owner observed 60 Hz / 480i, black after Circle, and a whole-console freeze when opening the PS menu. The log verifies candidate writes and RAM rollback but only reports standard API mode IDs; it does not prove a usable physical signal. **v1.1.3 disables timing tests and in-app restoration transitions in production.** Use a console reboot to clear previous timing edits. The activation/recovery mechanism needs offline investigation before another hardware test.
-
-The current build retains the menu renderer that the owner saw working after reboot. It completes both initial display buffers, defers LV1 inspection until selected, and records frame samples, flip completions and menu heartbeat. The cause of the earlier black startup was not established.
-
-**PROVEN startup fix:** v1.1 incorrectly compared native enabled state 0 with the legacy constant 1. Current builds use the native state constants. Fifteen host entry-point scenarios cover startup, initial buffers, disabled timing actions, PS-menu open/resume/quit, drawing-only events, held closing buttons and GPU waits suspended by OS UI.
-
-- Uses the same software renderer as the sibling Buzz Bridge PS3 app: font, colors, D-pad list, wrapped text, overscan margins, aspect handling and interlace filtering. Attribution/license is in `app/BuzzBridge-LICENSE` and inside the package.
-- D-pad moves, Cross selects, Circle returns/exits. PAL/NTSC choices explain that tests are unavailable; stock timing information directs the owner to reboot. These choices perform no timing writes or output transitions.
-- Explicit memory inspection resolves protection pages and recognizes all 42 words across both SD aliases. Three erroneous PAL stock fields from the original app are corrected.
-- The old transaction/transition logic remains available only to offline host fixtures through `TIMING_OFFLINE_TEST`; production blocks entry before availability queries, snapshots, stores or transitions. There is no in-app enable option.
-- RAM readback and `videoGetState` do not prove an actual 240p/288p waveform. A successful physical activation and recovery path has not been implemented.
-
-The public video API has no arbitrary active-height field. The AV manager bounds request dimensions by the patched metadata, so full-height standard requests may be rejected. Resolving that activation path and confirming physical sync remain open work.
-
-### Build and local validation
-
-PS3DK 0.26.0, CMake, Ninja and Python are required to build. Host tests additionally need clang or gcc.
-
-```powershell
-python -B tools/test_app.py
-python -B tools/build_ps3_app.py
-```
-
-Optional private firmware audit, without publishing/copying firmware:
-
-```powershell
-python -B tools/test_app.py --firmware <path-to-local-4.93-sysmgr_ss.elf>
-```
-
-The tests cover page resolution, all SD aliases, refusal of unknown bytes, rollback at each failed PAL store, video transition/recovery paths, and UI bounds at SD/HD in both aspects. The private audit compares all 42 stock target words against the local module. Package builds decrypt/inspect members and generate `deliverables/package_manifest.json` with hashes. These checks do not run firmware or measure a console's output.
-
-### Using the diagnostics build
-
-1. Power off/restart the console to clear the old build's RAM edits. Install the new package through XMB Package Manager from FAT32 USB or `/dev_hdd0/packages`.
-2. Start in normal **576i / AV Multi Out / SCART RGB**. The menu and diagnostics are available; the failed mode test cannot run.
-3. Do not reinstall an older experimental package to repeat the failing 288p/restore sequence.
-
-Log: `/dev_hdd0/tmp/ps3_240p.log` (overwritten at app startup). Read it from the owner's console with:
-
-```powershell
-curl.exe --fail --max-time 15 -o build/ps3_240p-console.log ftp://192.168.0.169/dev_hdd0/tmp/ps3_240p.log
-```
-
-Legacy `tools/apply_240p_patch.ps1` live writes are retired because its physical addresses were tied to one boot. Offline `-UnitTest`/`-WhatIf` reference operations remain available.
-
-## Research
-
-- [Verified research](docs/RESEARCH.md) and untouched [original AI draft](docs/RESEARCH_agy_draft.md).
-- [LV1 AV-manager trace](docs/LV1_AV_TRACE.md), [BC PS2/PS1 video paths](docs/BC_PS1_EMULATOR_VIDEO.md), [LV1 process/page resolution](docs/LV1_SYSMGR_SS_LOADADDR.md), and [read-only anchor plan](docs/EXPERIMENT_lv1_anchor_peek.md).
-- Historical [feasibility assessment](docs/FEASIBILITY_240P_RSX_ENCODER.md) and [prototype specification](docs/PROTOTYPE_LV1_TIMING_PATCH.md), with correction notices; [waveform verification protocol](docs/VERIFICATION_WAVEFORM.md).
-
-Own console only. Sony-derived inputs, firmware and instruction/decompiler listings stay in gitignored `local_only/`. Local building/testing is authorized; installing, launching or writing to the console is owner-run. Volatile timing edits are experimental; no flash modification is implemented.
+Experimental 240p/288p homebrew for PS3 AV Multi Out on Evilnat 4.93 + Cobra. The current release is **v1.2.2** (package version **01.22**).
 
 <!-- progress:start -->
 ## Progress
@@ -81,7 +20,57 @@ Own console only. Sony-derived inputs, firmware and instruction/decompiler listi
 | Native PS3 homebrew application (EBOOT.BIN / PS3-240P.pkg) | 10% | `████████░░` 80.0% |
 | Hardware waveform verification (line count, sync, 15.7 kHz) | 5% | `░░░░░░░░░░` 0% |
 
-_Last update: 2026-11-11. v1.1.3 owner reports PS overlay freezes before a choice; log shows app alive with system_menu=1 and no timing test. v1.1.4 continues frozen-scene flips like the SDK sample, handles drawing callbacks, suppresses input until release, and permits Quit during OS-paused GPU waits. Fifteen entry-point simulations and native/package checks pass; console overlay fix unverified. Timing tests stay disabled._
+_Last update: 2026-11-13. v1.2.2 release validation passed: patch/raster/UI tests, 17 startup scenarios, helper artifact audit, all 44 firmware target comparisons, finalized PKG members and checksums. The release preserves the exact owner-tested PKG. Owner confirms XMB, PS1 (ps1_emu.self), RetroArch's picture/PS menu and Super Mario All-Stars. Electrical progressive-sync and PAL geometry verification remain open._
 <!-- progress:end -->
 
-The progress block is generated from `docs/progress.json`; percentages estimate work, not a probability of native output working.
+The progress block is generated from `docs/progress.json`; percentages estimate work, not electrical verification.
+
+## v1.2.2: full-frame Mode 4
+
+**CLAIMED (owner hardware tests, 2026-11-13):** the app and XMB show a complete picture, PS1 games work with `ps1_emu.self`, and RetroArch 1.10.0 runs Super Mario All-Stars with a working PS menu after its saved resolution/viewport are corrected to 720x480. See [the evidence and geometry checkpoint](docs/GEOMETRY_STATUS_2026-11-13.md).
+
+**PROVEN (code and captured register readback):** the Mode-4 recipe retains full 480-line source fetching, uses a 522-line frame, and keeps unity scaling. The previous scaler experiment is disabled in normal enable. Source: `app/source/timing_payloads.h`, `app/source/main.c`, and the checkpoint's private capture references.
+
+**UNKNOWN:** electrical progressive-sync/field parity, broader game/core compatibility, and PAL geometry. A full picture and successful API/RAM checks do not establish a measured 240p waveform. The older PAL candidate remains experimental.
+
+## Install and use
+
+1. Download **PS3-240P.pkg** from [GitHub Releases](https://github.com/Gabarsolon/ps3-240p/releases/latest) and install it through XMB Package Manager. The app is titled **PS3 240p / 288p Switcher** (`PS240P001`).
+2. Start with AV Multi Out selected and a supported SD setup. Reboot first if a different timing experiment is still in RAM.
+3. Open the app and select the first option, **Enable 240p + 288p / Start Background Enforcer**, then return to XMB. The validated geometry path is Mode 4; the menu's PAL option has no equivalent validation.
+4. For RetroArch, apply the [SD configuration settings](docs/RETROARCH_SD.md) before testing. The PKG does not edit RetroArch's config.
+
+**PROVEN (implementation):** timing edits and the resident helper are runtime-only; reboot clears them. Enable again after reboot. The helper corrects a stable Mode-5 fallback to Mode 4, checks for a free VSH plugin slot, and deploys its plugin by content rather than file size. Source: `plugin/vsh_240p.c`, `app/source/main.c`.
+
+Diagnostic logs, overwritten when their respective app/helper starts:
+
+- `/dev_hdd0/tmp/ps3_240p.log`
+- `/dev_hdd0/tmp/vsh_240p.log`
+
+## Build and validation
+
+PS3DK 0.26.0, CMake, Ninja and Python are used for the app build. Host checks require clang or gcc.
+
+```powershell
+python -B tools/test_app.py
+python -B tools/build_ps3_app.py
+```
+
+Optional comparison with a private 4.93 module:
+
+```powershell
+python -B tools/test_app.py --firmware <path-to-local-4.93-sysmgr_ss.elf>
+```
+
+**PROVEN (release checks):** patch/raster/UI tests, 17 startup scenarios, the compiled helper audit, and all 44 stock timing/code target comparisons pass in the release workspace. The package validator checks the finalized container and its members. These are offline checks, not electrical measurements. Source: `tools/test_app.py`, `tools/pkg_inspect.py`, `deliverables/package_manifest.json`.
+
+The app builder packages the tracked `plugin/vsh_240p.sprx`. Rebuilding the helper with `tools/build_plugin.py` additionally requires the sibling native-PRX linker/packer/signing tools described in that script. The UI renderer reuses Buzz Bridge code; its attribution/license is in `app/BuzzBridge-LICENSE` and in the PKG.
+
+## Research and history
+
+- [Current geometry evidence and test results](docs/GEOMETRY_STATUS_2026-11-13.md).
+- [Earlier app review and failed experiments](docs/APP_REVIEW_2026-11-11.md).
+- [Verified research](docs/RESEARCH.md), [AV-manager trace](docs/LV1_AV_TRACE.md), [PS1/PS2 video paths](docs/BC_PS1_EMULATOR_VIDEO.md), and [live page resolution](docs/LV1_SYSMGR_SS_LOADADDR.md).
+- Historical [feasibility assessment](docs/FEASIBILITY_240P_RSX_ENCODER.md) and [prototype specification](docs/PROTOTYPE_LV1_TIMING_PATCH.md) contain correction notices. [Waveform verification protocol](docs/VERIFICATION_WAVEFORM.md).
+
+Sony-derived firmware, decrypted modules, decompiler output, phone photos and console captures remain in gitignored `local_only/`. This project does not implement firmware flashing.

@@ -1,5 +1,6 @@
 /* Expose the numeric plan to an optional private-input comparison. */
 #include "lv1_patch.h"
+#include "timing_payloads.h"
 #include <string.h>
 #ifdef _WIN32
 #define EXPORT __declspec(dllexport)
@@ -9,6 +10,8 @@
 static uint64_t read_word(void *u,uint64_t a)
 {
  (void)u;
+ if(a==0x1000000+(VSCALE_ENABLE_VA-0x80000000u))return STOCK_VSCALE_ENABLE_WORD;
+ if(a==0x1000000+(VSCALE_FACTOR_VA-0x80000000u))return STOCK_VSCALE_FACTOR_WORD;
  if(a==0x36cdb0+10*16+8)return 0x120000;
  if(a==0x120000)return UINT64_C(10)<<32;
  if(a==0x120018)return 0x121000;
@@ -25,9 +28,10 @@ static uint64_t read_word(void *u,uint64_t a)
  return 0;
 }
 static void no_write(void *u,uint64_t a,uint64_t v){(void)u;(void)a;(void)v;}
+EXPORT int audit_count(void){return PATCH_WORDS;}
 EXPORT int audit_word(int index,uint32_t *va,uint64_t *word)
 {
- patch_context c;memset(&c,0,sizeof(c));c.read=read_word;c.write=no_write;
+ patch_context c;memset(&c,0,sizeof(c));c.read=read_word;c.write=no_write;c.scaler_mode=1;
  (void)patch_resolve(&c);
  if(index<0||index>=PATCH_WORDS||!c.address[index])return -1;
  uint64_t p=c.address[index];

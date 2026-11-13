@@ -31,6 +31,7 @@ static uint64_t physical(uint32_t va)
  if((va&0xfffff000u)==0xa0023000u)return 0x1300000+(va&0xfff);
  if((va&0xfffff000u)==0xa0024000u)return 0x1600000+(va&0xfff);
  if((va&0xfffff000u)==0x80002000u)return 0x1500000+(va&0xfff);
+ if((va&0xfffff000u)==0x80003000u)return 0x1400000+(va&0xfff);
  if((va&0xfffff000u)==0xc000a000u)return 0x170a000+(va&0xfff);
  abort();
 }
@@ -42,19 +43,15 @@ static void setup(void)
  put64(0x36cdb0+10*16+8,0x120000);put32(0x120000,10);put64(0x120018,0x121000);
  put64(0x121000,0x35ecb8);put32(0x12103c,0x122000);
  unsigned vas[]={0x80039000,0x80038000,0xc0000000,0xc000b000,0xc000d000,0xa0023000,0xa0024000,
-  0x80002000,0xc000a000};
- for(int i=0;i<9;i++){
+  0x80002000,0x80003000,0xc000a000};
+ for(int i=0;i<10;i++){
   uint64_t node=0x122000+i*0x20;
   put64(node,physical(vas[i]));put32(node+8,vas[i]);
-  put32(node+0x14,i==8?0x121028:(uint32_t)node+0x20);ram[node+0x18]=12;
+  put32(node+0x14,i==9?0x121028:(uint32_t)node+0x20);ram[node+0x18]=12;
  }
- /* The vertical scale factor instruction and the AV source descriptors are
-  * live values: seed them before the first resolve so the resolver sees
-  * the same bytes the 4.93 module holds. */
- put64(physical(0x80002e10),STOCK_SCALE_FACTOR_WORD);
- put64(physical(0xc000af48),UINT64_C(0x1111111100000000));
- put64(physical(0xc000af50),UINT64_C(0x3333333300000001));
- put64(physical(0xc000af58),UINT64_C(0x5555555500000241));
+ /* Seed both verified code words before the first resolve. */
+ put64(physical(0x80002f48),STOCK_VSCALE_ENABLE_WORD);
+ put64(physical(0x80003100),STOCK_VSCALE_FACTOR_WORD);
  /* First resolve populates the target plan, then rejects empty bytes. */
  assert(patch_resolve(&c)==-1);
  for(int i=0;i<PATCH_WORDS;i++)put64(c.address[i],c.stock[i]);
@@ -76,17 +73,18 @@ static void setup(void)
  assert(c.stock[38]==UINT64_C(0x04af03b3024a0244));
  assert((c.candidate[29]&0xffffffffu)==0); /* Preserve PAL profile 3 routing. */
  assert(c.candidate[14]==c.stock[14]); /* Preserve NTSC alias placement. */
- /* Vertical scale factor: one 8-byte code word, verified at run time. */
- assert(c.address[42]==physical(0x80002e10));
- assert(c.stock[42]==STOCK_SCALE_FACTOR_WORD);
- assert(c.candidate[42]==STOCK_SCALE_FACTOR_WORD); /* Off: no code change. */
+ /* Vertical scaler: two verified code words, off by default. */
+ assert(c.address[42]==physical(0x80002f48));
+ assert(c.stock[42]==STOCK_VSCALE_ENABLE_WORD);
+ assert(c.candidate[42]==STOCK_VSCALE_ENABLE_WORD); /* Off: no code change. */
  assert(c.family[42]==2);
- /* AV source descriptor probe (read only). */
- assert(c.scale_probe_ready);
- assert(c.scale_probe[0][0][0]==UINT64_C(0x1111111100000000));
- assert(c.scale_probe[0][0][1]==UINT64_C(0x3333333300000001));
- assert(c.scale_probe[0][0][2]==UINT64_C(0x5555555500000241));
- assert(c.scale_probe[0][1][1]==0); /* Unmapped entries read as zero. */
+ assert(c.address[43]==physical(0x80003100));
+ assert(c.stock[43]==STOCK_VSCALE_FACTOR_WORD);
+ assert(c.candidate[43]==STOCK_VSCALE_FACTOR_WORD); /* Off: no code change. */
+ assert(c.family[43]==2);
+ /* Diagnostics capture the resolved metadata, not pointer globals. */
+ for(int p=0;p<METADATA_PROBE_PROFILES;p++)for(int w=0;w<3;w++)
+  assert(c.metadata_probe[p][w]==c.stock[p*10+w]);
 }
 static void is_stock(void)
 {for(int i=0;i<PATCH_WORDS;i++)assert(get(NULL,c.address[i])==c.stock[i]);}
@@ -97,6 +95,13 @@ static switch_flow flow(void)
 {switch_flow f={0};f.patch=&c;f.available=avail;f.configure=video;return f;}
 int main(void)
 {
+ /* Match the independently captured successful NTSC register recipe. */
+ setup();
+ assert((c.candidate[0]&0xffffffffu)==1); /* Source field fetching stays on. */
+ assert(c.candidate[5]==UINT64_C(0x000001df00000209)); /* 480 / 522 */
+ assert(c.candidate[6]==UINT64_C(0x000001e9000001e8)); /* marker / sync */
+ assert((c.candidate[7]>>32)==494);
+ assert((c.candidate[8]&0xffffffffu)==UINT64_C(0x00f500f2)); /* field window */
  setup();assert(patch_state(&c,0)==STATE_STOCK&&patch_state(&c,1)==STATE_STOCK);
  patch_cached_video snapshot;
  assert(c.video_ready&&!patch_read_cached_video(&c,&snapshot)&&!stores);
@@ -113,20 +118,39 @@ int main(void)
  assert(!patch_candidate_in_cache(&c,&snapshot,0));
  assert(!patch_apply(&c,0));assert(patch_state(&c,1)==STATE_STOCK&&patch_state(&c,0)==STATE_PATCHED);
  assert(!patch_undo(&c));is_stock();
- /* Vertical scale factor experiment: the flag changes exactly one verified
-  * code word, keeps the instruction half that computes the request bits,
-  * and refuses a live word that is not the verified instruction. */
+ /* Vertical scaler experiment: the flag changes exactly two verified code
+  * words (candidate Y-scale enable and source-line step),
+  * keeps the neighbouring instructions intact, and refuses a live word
+  * that is not the verified instruction. */
  setup();c.scaler_mode=1;assert(!patch_resolve(&c));
- assert(c.candidate[42]==UINT64_C(0x600800043c000800));
- assert((c.candidate[42]>>32)==(c.stock[42]>>32));
- assert((c.candidate[42]&0xffffffffu)==UINT64_C(0x3c000800)); /* lis r0,0x0800 */
- assert(((c.candidate[42]&0xffffu)<<16)==SCALE_FACTOR_PATCH_STEP); /* 0.5 in 4.28 fixed point */
+ assert(c.candidate[42]==PATCH_VSCALE_ENABLE_WORD);
+ assert(c.candidate[43]==PATCH_VSCALE_FACTOR_WORD);
+ assert((c.candidate[42]>>32)==(c.stock[42]>>32)); /* lis r5,0x11b kept */
+ assert((c.candidate[42]&0xffffffffu)==UINT64_C(0x60031010)); /* Enable Y scale; preserve filtering. */
+ assert((c.candidate[43]>>32)==(c.stock[43]>>32)); /* ld r25,-0x38(r1) kept */
+ assert((c.candidate[43]&0xffffffffu)==UINT64_C(0x3c002000)); /* Candidate source-line step 2.0. */
+ assert(((c.candidate[43]&0xffffu)<<16)==VSCALE_FACTOR_STEP); /* Candidate 2.0 encoding. */
  assert(patch_state(&c,0)==STATE_STOCK&&patch_state(&c,1)==STATE_STOCK);
  assert(!patch_apply(&c,0));
- assert(get(NULL,c.address[42])==UINT64_C(0x600800043c000800));
+ assert(get(NULL,c.address[42])==PATCH_VSCALE_ENABLE_WORD);
+ assert(get(NULL,c.address[43])==PATCH_VSCALE_FACTOR_WORD);
  assert(patch_state(&c,0)==STATE_PATCHED);
  assert(!patch_restore(&c));
- assert(get(NULL,c.address[42])==STOCK_SCALE_FACTOR_WORD);
+ assert(get(NULL,c.address[42])==STOCK_VSCALE_ENABLE_WORD);
+ assert(get(NULL,c.address[43])==STOCK_VSCALE_FACTOR_WORD);
+ /* A dropped store at either code word must roll back the entire plan. */
+ setup();c.scaler_mode=1;assert(!patch_resolve(&c));
+ assert(!patch_apply(&c,0));int scaler_stores=stores;
+ assert(scaler_stores>=2);
+ for(int i=1;i<=scaler_stores;i++){
+  setup();c.scaler_mode=1;assert(!patch_resolve(&c));drop_store=i;
+  assert(patch_apply(&c,0)==-1);is_stock();
+ }
+ /* Old experimental code cannot silently masquerade as this candidate. */
+ setup();put64(c.address[42],STOCK_VSCALE_ENABLE_WORD&~UINT64_C(0x1000));
+ c.scaler_mode=1;assert(patch_resolve(&c)==-1&&!stores);
+ setup();put64(c.address[43],UINT64_C(0x1234567812345678));c.scaler_mode=1;
+ assert(patch_resolve(&c)==-1&&!stores);
  setup();put64(c.address[42],UINT64_C(0x1234567812345678));c.scaler_mode=1;
  assert(patch_resolve(&c)==-1&&!stores);
  setup();put64(c.address[42],UINT64_C(0x1234567812345678));
