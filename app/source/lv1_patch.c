@@ -98,6 +98,53 @@ int patch_resolve(patch_context *c)
   c->candidate[index]=family?g_patch_288p_encoder[0]:g_patch_240p_encoder[0];
   c->family[index]=(unsigned)family;
  }
+ /* RSX CRTC 2.0 vertical scale factor, in the 4.93 sysmgr_ss text that
+  * programs the display controller. PROVEN from the live 4.93 image and
+  * from the matching module bytes: FUN_80002ca4 writes the vertical scale
+  * factor to CRTC 0x68898. In the mismatch path (source height differs
+  * from the raster active height, which is exactly our 240p case) it
+  * computes 0x10000000 / scale, and the firmware's scale field is 1 for a
+  * 1:1 source/raster pair, so the CRTC reads the source 1:1 and scans
+  * only the first raster lines: the cropped, stretched picture.
+  * The experiment changes the numerator to 0x08000000 (0.5), so the whole
+  * source is reduced into the raster. The exact-fit path (the stock
+  * 480i/576i modes) is not touched.
+  * The word is verified at run time: a live image that differs from the
+  * 4.93 build is refused instead of patched. */
+ if(translate(pages,count,SCALE_FACTOR_VA,&c->address[index]))
+  return fail(c,"Vertical scale factor page unavailable/ambiguous");
+ uint64_t scale_live=read64(c,c->address[index]);
+ if(scale_live==STOCK_SCALE_FACTOR_WORD){
+  c->stock[index]=scale_live;
+  c->candidate[index]=c->scaler_mode?PATCH_SCALE_FACTOR_WORD:scale_live;
+ }else if(scale_live==PATCH_SCALE_FACTOR_WORD){
+  c->stock[index]=STOCK_SCALE_FACTOR_WORD;c->candidate[index]=PATCH_SCALE_FACTOR_WORD;
+ }else{
+  if(c->scaler_mode)return fail(c,"Vertical scale factor instruction not recognised");
+  c->stock[index]=scale_live;c->candidate[index]=scale_live;
+ }
+ c->family[index]=2;
+ index++;
+ if(c->log)c->log("Vertical scale factor word %016llx -> %016llx",
+  (unsigned long long)scale_live,(unsigned long long)c->candidate[index-1]);
+ /* Live AV source descriptors (read only). The per-mode "scale" field that
+  * feeds the vertical scale factor lives in these tables; logging them
+  * proves what the firmware thinks the source/raster ratio is. The 8-byte
+  * words at descriptor offsets 0x00, 0x08 and 0x10 cover the six 32-bit
+  * fields of each 0x18-byte descriptor; the scale is the low half of the
+  * word at offset 0x08. */
+ c->scale_probe_ready=0;
+ for(int t=0;t<2;t++){
+  uint32_t base=t?0xc000af70u:0xc000af48u;
+  for(int e=0;e<SCALE_PROBE_ENTRIES;e++){
+   for(int w=0;w<3;w++){
+    uint64_t pa=0;
+    if(translate(pages,count,base+(uint32_t)(e*0x18)+8u*(uint32_t)w,&pa))c->scale_probe[t][e][w]=0;
+    else c->scale_probe[t][e][w]=read64(c,pa);
+   }
+   if(c->scale_probe[t][e][1])c->scale_probe_ready=1;
+  }
+ }
  for(int i=0;i<PATCH_WORDS;i++)for(int j=0;j<i;j++)if(c->address[i]==c->address[j])
   return fail(c,"Aliased timing targets");
  c->ready=1;
@@ -178,14 +225,19 @@ int patch_candidate_in_cache(const patch_context *c,const patch_cached_video *vi
 }
 int patch_state(patch_context *c,int family)
 {
- int stock=1,patched=1;
+ int fam_stock=1,fam_patched=1,shared_patched=1;
  if(!c->ready||family<0||family>1)return STATE_UNKNOWN;
- for(int i=0;i<PATCH_WORDS;i++)if(c->family[i]==(unsigned)family){
+ for(int i=0;i<PATCH_WORDS;i++){
   uint64_t v=read64(c,c->address[i]);
   if(v!=c->stock[i]&&v!=c->candidate[i])return STATE_UNKNOWN;
-  stock&=v==c->stock[i];patched&=v==c->candidate[i];
+  if(c->family[i]==(unsigned)family){
+   fam_stock&=v==c->stock[i];
+   fam_patched&=v==c->candidate[i];
+  }else if(c->family[i]==2){
+   shared_patched&=v==c->candidate[i];
+  }
  }
- return stock?STATE_STOCK:patched?STATE_PATCHED:STATE_MIXED;
+ return (fam_patched&&shared_patched)?STATE_PATCHED:fam_stock?STATE_STOCK:STATE_MIXED;
 }
 int patch_snapshot(patch_context *c)
 {
@@ -236,7 +288,7 @@ int patch_apply(patch_context *c,int family)
  if(family<0||family>2)return fail(c,"Invalid timing family");
  for(int i=0;i<PATCH_WORDS;i++){
   if(family==2)target[i]=c->candidate[i];
-  else target[i]=c->family[i]==(unsigned)family?c->candidate[i]:c->stock[i];
+  else target[i]=(c->family[i]==(unsigned)family||c->family[i]==2)?c->candidate[i]:c->stock[i];
  }
  /* Single-variable experiment: publish the patched active height in the
   * metadata record. Without it the metadata keeps the stock framebuffer

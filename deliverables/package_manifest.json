@@ -5,8 +5,8 @@
   "app_version": "01.20",
   "validation": "Proportional 240p/288p typography with non-overlapping line spacing and CRT overscan margins",
   "package": "PS3-240P.pkg",
-  "size_bytes": 195264,
-  "sha256": "e50aa1c8dca691070161c0e06a88a1a387bee94eaaebceae205c80368244a34b",
+  "size_bytes": 196032,
+  "sha256": "ab46a9bdd275952d0b9785d2a8ba23c74200a66ad5ab8c5dcabb3f4b7ef23eb8",
   "files": [
     {
       "file": "ICON0.PNG",
@@ -25,8 +25,8 @@
     },
     {
       "file": "USRDIR/EBOOT.BIN",
-      "bytes": 157104,
-      "sha256": "141608aa79c254227c2dcf4a635e8c748e61949797defbfecac7f8a704c5a60e"
+      "bytes": 157872,
+      "sha256": "aa332b140f3e6ab0aa75c2e8c7f67167309cc512864cd0e43c426aad33798290"
     },
     {
       "file": "USRDIR/vsh_240p.sprx",

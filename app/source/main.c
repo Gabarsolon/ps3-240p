@@ -33,6 +33,7 @@ SYS_PROCESS_PARAM(1001,0x100000);
 #define APP_ACTIVE_FLAG "/dev_hdd0/tmp/240p_app.active"
 #define ENFORCER_FLAG "/dev_hdd0/tmp/240p_enforcer.on"
 #define META240_FLAG "/dev_hdd0/tmp/240p_meta240.on"
+#define SCALER_FLAG "/dev_hdd0/tmp/240p_scaler.on"
 static uint32_t *buffers[2],*software,offsets[2],pitch,label_value;
 static videoState state;
 static videoDeviceInfo device;
@@ -114,12 +115,27 @@ static void write_mapi(void *u,uint64_t address,uint64_t value){(void)u;(void)ad
 static void write_cfw(void *u,uint64_t address,uint64_t value){write_mapi(u,address,value);}
 static int probe_uart_permission(void){return mock_uart_permission(0,0,2);}
 #endif
+static int flag_present(const char *path);
 static int inspect(void)
 {
  if(flow.pending)return -1;
  uart_permission=probe_uart_permission();uart_probed=1;
  app_log("AV UART permission probe rc=%08x bytes=0; no command sent",(unsigned)uart_permission);
  memset(&patch,0,sizeof(patch));patch.log=app_log;
+ /* The experiment flags are read here, after the context is cleared and
+  * before the targets are resolved: the scaler mode changes what the
+  * resolver accepts as the candidate bytes. */
+ patch.meta_height_mode=flag_present(META240_FLAG)?1:0;
+ patch.scaler_mode=flag_present(SCALER_FLAG)?1:0;
+ app_log("Metadata height mode=%d (1 = patched active height); scaler mode=%d",
+  patch.meta_height_mode,patch.scaler_mode);
+ if(patch.scale_probe_ready){
+  for(int t=0;t<2;t++)for(int e=0;e<SCALE_PROBE_ENTRIES;e++)
+   app_log("AV scale probe table=%d entry=%d words=%016llx %016llx %016llx",t,e,
+    (unsigned long long)patch.scale_probe[t][e][0],
+    (unsigned long long)patch.scale_probe[t][e][1],
+    (unsigned long long)patch.scale_probe[t][e][2]);
+ }else app_log("AV scale probe: descriptor tables unavailable");
  memset(&cached_video,0,sizeof(cached_video));
  patch.read=read_mapi;patch.write=write_mapi;backend=1;
  if(patch_resolve(&patch)){
@@ -162,6 +178,11 @@ static int drain(void)
 }
 static int active_raster_height(void)
 {
+ /* With the CRTC vertical scaler enabled the whole source is reduced into
+  * the raster, so the UI must be drawn at the full source height. Without
+  * it the raster only scans the top 240 lines, so the UI is laid out for
+  * 240 lines and the source buffer is cropped instead of scaled. */
+ if(patch.scaler_mode)return resolution.height;
  if(flow.pending)return 240;
  if(patch.ready){
   if(patch_state(&patch,0)==STATE_PATCHED&&state.displayMode.resolution==4)return 240;
@@ -571,9 +592,14 @@ int main(void)
     /* Single-variable geometry experiment: with /dev_hdd0/tmp/240p_meta240.on
      * present, the metadata record also publishes the patched 240-line height
      * instead of the stock 480/576 framebuffer height. */
-    patch.meta_height_mode=flag_present(META240_FLAG)?1:0;
-    app_log("Metadata height mode=%d (1 = patched active height)", patch.meta_height_mode);
-    if(read_video()||inspect())status("Apply Error",patch.error[0]?patch.error:"Output query failed");
+    /* Single-variable geometry experiments. /dev_hdd0/tmp/240p_meta240.on
+     * publishes the patched 240-line height in the metadata record.
+     * /dev_hdd0/tmp/240p_scaler.on additionally patches one instruction in
+     * the running AV service so the RSX CRTC 2.0 vertical scale factor
+     * becomes 0.5 instead of 1.0, which reduces the whole source into the
+     * 240-line raster instead of scanning only its first lines. Both flags
+     * are read inside inspect(), which re-resolves the targets. */
+     if(read_video()||inspect())status("Apply Error",patch.error[0]?patch.error:"Output query failed");
     else if(switch_begin(&flow, MODE_ALL_SD, state.displayMode.resolution, analog())){
      status("Apply Error", flow.error[0]?flow.error:"Failed to apply 240p/288p");
     } else {
