@@ -24,14 +24,19 @@ def main():
     for name, sources in [
         ("patch", ["tests/test_patch.c", "app/source/lv1_patch.c", "app/source/switch_flow.c"]),
         ("raster", ["tests/test_raster.c", "tests/raster_sim.c"]),
+        ("sd", ["tests/test_sd.c", "app/source/sd_default.c"]),
+        ("plugin-lifecycle", ["tests/test_plugin_lifecycle.c", "app/source/plugin_lifecycle.c"]),
+        ("vsh-video", ["tests/test_vsh_video.c", "plugin/vsh_video.c"]),
         ("ui", ["tests/test_ui.c", "app/source/ui_layout.c"]),
-        ("startup", ["tests/test_startup.c", "app/source/lv1_patch.c", "app/source/switch_flow.c", "app/source/ui_layout.c"]),
+        ("startup", ["tests/test_startup.c", "app/source/lv1_patch.c", "app/source/switch_flow.c", "app/source/ui_layout.c", "app/source/sd_default.c", "app/source/plugin_lifecycle.c"]),
     ]:
         exe = out / (name + (".exe" if os.name == "nt" else ""))
         test_flags = flags + (["-DTIMING_OFFLINE_TEST=1"] if name == "patch" else [])
+        if name == "vsh-video":
+            test_flags += ["-DVSH_VIDEO_HOST_TEST=1"]
         subprocess.run(test_flags + sources + ["-o", str(exe)], cwd=ROOT, check=True)
         if name == "startup":
-            for scenario in range(17):
+            for scenario in range(19):
                 subprocess.run([str(exe), str(scenario)], cwd=ROOT, check=True)
             continue
         command = [str(exe)]

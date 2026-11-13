@@ -37,8 +37,9 @@ static void check_candidate(const char *label, const uint64_t *metadata, const u
   raster_decode_metadata(stock_metadata, &sm);
   raster_decode_raster(stock_raster, &sr);
 
-  /* The successful NTSC recipe retains source-field fetching. PAL still
-   * uses the older candidate and has no corresponding geometry result. */
+  /* Both recipes retain source-field fetching and even frame totals.
+   * These checks constrain arithmetic, not the physical waveform. */
+  assert(m.interlace == 1);
   if (!strcmp(label,"NTSC")) {
     assert(m.interlace == 1);
     assert(r.active_lines == 480 && r.total_lines == 522);
@@ -46,7 +47,15 @@ static void check_candidate(const char *label, const uint64_t *metadata, const u
     assert(!(r.total_lines & 1));
     assert(r.v_marker == 489 && r.v_sync_start == 488 && r.v_sync_end == 494);
     assert((uint32_t)raster[5] == 0x00f500f2u);
-  } else assert(m.interlace == 0);
+  } else {
+    assert(r.active_lines == 576 && r.total_lines == 624);
+    assert(r.active_lines / 2 == 288 && r.total_lines / 2 == 312);
+    assert(!(r.total_lines & 1));
+    assert(r.v_marker == 581 && r.v_sync_start == 580 && r.v_sync_end == 586);
+    assert((uint32_t)raster[5] == 0x01250122u);
+    assert(m.refresh_bits == sm.refresh_bits); /* Keep nominal PAL 50 Hz. */
+    assert(r.h_total == sr.h_total); /* Retain PAL horizontal timing. */
+  }
   assert(r.scan_control == 0x00010000u);
   assert(sm.interlace == 1);
   assert(sr.scan_control == 0x00030000u);
@@ -71,7 +80,7 @@ int main(void)
   show("NTSC stock 480i", g_stock_240p_metadata, g_stock_240p_raster);
   show("NTSC candidate 240p", g_patch_240p_metadata, g_patch_240p_raster);
   show("PAL stock 576i", g_stock_288p_metadata, g_stock_288p_raster);
-  show("PAL candidate PAL-60", g_patch_288p_metadata, g_patch_288p_raster);
+  show("PAL candidate 288p", g_patch_288p_metadata, g_patch_288p_raster);
 
   printf("Historical candidates (git 0367803, before 47eb61a and ad44c28):\n");
   printf("  %-22s meta height=%-4u raster active=%-4u total=%-4u\n", "NTSC 240p/262 lines", 240u, 240u, 262u);

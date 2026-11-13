@@ -1,6 +1,6 @@
 {
   "updated": "2026-11-13",
-  "note": "v1.2.2 release validation passed: patch/raster/UI tests, 17 startup scenarios, helper artifact audit, all 44 firmware target comparisons, finalized PKG members and checksums. The release preserves the exact owner-tested PKG. Owner confirms XMB, PS1 (ps1_emu.self), RetroArch's picture/PS menu and Super Mario All-Stars. Electrical progressive-sync and PAL geometry verification remain open.",
+  "note": "v1.3.6 release checks complete: 240p/288p geometry, native background correction and repeated-enable reuse validated on the console; owner also confirms the requested PAL PS1/PS-menu/return-XMB flow. Live 480i/576i selection and saved defaults work without reboot. Final package retains the tested native helper and timing behavior with release branding/version metadata. Local menu preview uses the production C renderer. Host suites, 19 startup/menu/idle cases, compiled helper audit, 54 firmware targets and finalized package checks pass; electrical parity and broad compatibility remain open.",
   "stages": [
     {
       "name": "Static analysis & claim verification (hypercalls, netemu, RSX attr 0x100)",

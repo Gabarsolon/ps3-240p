@@ -52,6 +52,8 @@ static void setup(void)
  /* Seed both verified code words before the first resolve. */
  put64(physical(0x80002f48),STOCK_VSCALE_ENABLE_WORD);
  put64(physical(0x80003100),STOCK_VSCALE_FACTOR_WORD);
+ put64(physical(0xc000af68),UINT64_C(0x80038ad8));
+ put64(physical(0xc000af70),UINT64_C(0x80038b10));
  /* First resolve populates the target plan, then rejects empty bytes. */
  assert(patch_resolve(&c)==-1);
  for(int i=0;i<PATCH_WORDS;i++)put64(c.address[i],c.stock[i]);
@@ -82,6 +84,12 @@ static void setup(void)
  assert(c.stock[43]==STOCK_VSCALE_FACTOR_WORD);
  assert(c.candidate[43]==STOCK_VSCALE_FACTOR_WORD); /* Off: no code change. */
  assert(c.family[43]==2);
+ assert(c.address[PAL_SPECIAL_META_INDEX]==physical(0x80038b10));
+ assert(c.address[PAL_SPECIAL_RASTER_INDEX]==physical(0x80038ad8));
+ assert(c.stock[PAL_SPECIAL_META_INDEX+2]==UINT64_C(0x0000023e00000001));
+ assert(c.candidate[PAL_SPECIAL_META_INDEX+2]==UINT64_C(0x0000024000000001));
+ assert(c.stock[PAL_SPECIAL_RASTER_INDEX+2]==UINT64_C(0x0000023d00000270));
+ assert(c.candidate[PAL_SPECIAL_RASTER_INDEX+2]==UINT64_C(0x0000023f0000026f));
  /* Diagnostics capture the resolved metadata, not pointer globals. */
  for(int p=0;p<METADATA_PROBE_PROFILES;p++)for(int w=0;w<3;w++)
   assert(c.metadata_probe[p][w]==c.stock[p*10+w]);
@@ -115,6 +123,7 @@ int main(void)
  assert(!patch_read_cached_video(&c,&snapshot)&&!patch_candidate_in_cache(&c,&snapshot,1));
  for(int i=0;i<7;i++)put64(c.video_address[2+i],c.candidate[33+i]);
  assert(!patch_read_cached_video(&c,&snapshot)&&patch_candidate_in_cache(&c,&snapshot,1));
+ assert(patch_candidate_on_head(&c,&snapshot,1,0)&&!patch_candidate_on_head(&c,&snapshot,1,1));
  assert(!patch_candidate_in_cache(&c,&snapshot,0));
  assert(!patch_apply(&c,0));assert(patch_state(&c,1)==STATE_STOCK&&patch_state(&c,0)==STATE_PATCHED);
  assert(!patch_undo(&c));is_stock();
@@ -171,9 +180,13 @@ int main(void)
  /* A mismatch in the LAST encoder target must prevent every earlier store. */
  setup();put64(c.address[41],1);assert(patch_apply(&c,1)==-1&&!stores);
  setup();put64(c.address[39],1);assert(patch_restore(&c)==-1&&!stores);
+ setup();put64(c.address[53],1);assert(patch_apply(&c,1)==-1&&!stores);
+ setup();put64(physical(0xc000af68),UINT64_C(0x80038c08));assert(patch_resolve(&c)==-1&&!stores);
+ setup();put64(physical(0xc000af70),UINT64_C(0x800391a8));assert(patch_resolve(&c)==-1&&!stores);
  setup();put64(c.address[0],c.candidate[0]);assert(patch_state(&c,0)==STATE_MIXED);
  assert(!patch_restore(&c));is_stock();
- setup();assert(!patch_apply(&c,1));int changed=stores;assert(changed>8);
+ setup();assert(!patch_apply(&c,1));int changed=stores;
+ assert(changed>0&&changed<PATCH_WORDS);
  for(int i=1;i<=changed;i++){
   setup();drop_store=i;assert(patch_apply(&c,1)==-1);is_stock();
  }
@@ -199,6 +212,24 @@ int main(void)
  }
  setup();f=flow();assert(!switch_begin(&f,1,5,1));fail_video_call=4;
  assert(switch_revert(&f)==-1&&f.pending);is_stock();
+ /* Both patched families can be enabled with an explicit PAL preference. */
+ setup();f=flow();assert(!switch_begin_target(&f,MODE_ALL_SD,5,4,1));
+ assert(calls[0]==4&&calls[1]==5&&f.pending);
+ assert(patch_state(&c,0)==STATE_PATCHED&&patch_state(&c,1)==STATE_PATCHED);
+ assert(!switch_revert(&f));is_stock();
+ setup();f=flow();assert(switch_begin_target(&f,MODE_240P_NTSC,5,4,1)==-1&&!stores&&!video_calls);
+ setup();f=flow();assert(switch_stock_begin(&f,99,4,1)==-1&&!stores&&!video_calls);
+ /* Selecting either stock family must recover the exact pre-switch patched
+  * state on cancel or either failed video request, including the old mode. */
+ for(unsigned target=4;target<=5;target++)for(int failure=0;failure<=2;failure++){
+  setup();f=flow();assert(!patch_apply(&c,MODE_ALL_SD));
+  fail_video_call=failure;
+  int rc=switch_stock_begin(&f,target,4,1);
+  if(failure)assert(rc==-1&&!f.pending);
+  else {assert(!rc&&f.pending&&calls[1]==target);is_stock();assert(!switch_revert(&f));}
+  assert(patch_state(&c,0)==STATE_PATCHED&&patch_state(&c,1)==STATE_PATCHED);
+  assert(calls[video_calls-1]==4);
+ }
  puts("PASS: live page resolution, both SD aliases, full preflight, every failed PAL store rollback, checked video transitions and recovery");
  return 0;
 }

@@ -69,6 +69,7 @@ def main():
         f"-Wl,-T,{linker.as_posix()}",
         "-Wl,--gc-sections",
         SOURCE,
+        PLUGIN / "vsh_video.c",
         SDK / "ppu" / "lib" / "lv2-prx-crt.o",
         "-lio",
         "-o", ELF,

@@ -1,12 +1,12 @@
 {
-  "title": "PS3 240p / 288p Switcher",
+  "title": "CRT Toolset",
   "content_id": "UP0001-PS240P001_00-PS3240PSWITCH001",
   "app_id": "PS240P001",
-  "app_version": "01.22",
+  "app_version": "01.36",
   "validation": "Proportional 240p/288p typography with non-overlapping line spacing and CRT overscan margins",
-  "package": "PS3-240P.pkg",
-  "size_bytes": 195968,
-  "sha256": "be8f1629db1ca818986d814c2082aa087ccc2a2dea4517b4bc004623448eae7e",
+  "package": "CRT-Toolset.pkg",
+  "size_bytes": 231792,
+  "sha256": "b6f384990c940463e0bc5b4622ac4e607aecf466b081f33ed981bdc10bb5837e",
   "files": [
     {
       "file": "ICON0.PNG",
@@ -16,7 +16,7 @@
     {
       "file": "PARAM.SFO",
       "bytes": 1040,
-      "sha256": "0df7ab684eac76c4fea6e116dc614643fe44101192acd84b4afb675202213387"
+      "sha256": "a0e67361e6ffa4d04ac2fa87c6ce00b8e5fefe934104171db26229bfa29c0e06"
     },
     {
       "file": "USRDIR/BuzzBridge-LICENSE.txt",
@@ -25,13 +25,13 @@
     },
     {
       "file": "USRDIR/EBOOT.BIN",
-      "bytes": 157808,
-      "sha256": "35561775579728154c2096b546b48eb6a25de6e2883678f951221f390a41c2c8"
+      "bytes": 191856,
+      "sha256": "6420a151cb99ae14e79b13eaeacc4c6a39d62aab3448d6ce23abb279fde7bd35"
     },
     {
       "file": "USRDIR/vsh_240p.sprx",
-      "bytes": 8112,
-      "sha256": "0dd33f86230c5065062d50bdf5a5e3181c6a34c9ac374e59721159150caf08e2"
+      "bytes": 9888,
+      "sha256": "c8adbfe66a69d4030c496373b5e4a3e3f8f7122a18a3bdc930fc1d617deb1f51"
     }
   ]
 }

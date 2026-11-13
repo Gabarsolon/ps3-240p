@@ -148,7 +148,7 @@ int ui_render(const ui_layout *base,const ui_view *v,ui_canvas *c,ui_result *r)
  memset(r,0,sizeof(*r));r->first=r->last=-1;
  r->body_top=l->body_top;r->body_lines=l->lines;
  rect(c,0,0,l->width,l->height,UI_BACKGROUND);
- line(l,c,r,l->left,l->top,l->title_scale,-1,"PS3 240p",0xfff4f6f8);
+ line(l,c,r,l->left,l->top,l->title_scale,-1,"CRT Toolset",0xfff4f6f8);
  block(l,c,r,title,l->top+7*l->title_scale+l->gap,header_rows,l->columns,-1,0xffb6d9ed);
  char hints[256];int hint_y=l->bottom-2*l->line;
  if(v->items&&v->count>0){

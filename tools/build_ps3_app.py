@@ -16,9 +16,9 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 CONTENT_ID = "UP0001-PS240P001_00-PS3240PSWITCH001"
-TITLE = "PS3 240p / 288p Switcher"
+TITLE = "CRT Toolset"
 APP_ID = "PS240P001"
-APP_VERSION = "01.22"
+APP_VERSION = "01.36"
 
 def sha256_file(path: Path) -> str:
     h = hashlib.sha256()
@@ -101,7 +101,7 @@ def main(sdk_path: str):
     print("\n=== [5/5] Building & Finalizing PS3 PKG ===")
     pkg_tool = sdk / "bin" / "pkg.exe"
     finalize_tool = sdk / "bin" / "package_finalize.exe"
-    out_pkg = deliverables_dir / "PS3-240P.pkg"
+    out_pkg = deliverables_dir / "CRT-Toolset.pkg"
 
     run(pkg_tool, "--contentid", CONTENT_ID, f"{staging_dir}/", out_pkg)
     run(finalize_tool, out_pkg)

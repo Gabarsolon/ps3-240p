@@ -22,9 +22,15 @@
 #include <cell/sysutil.h>
 #include <rsx/rsx.h>
 #include <io/pad.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <netinet/in.h>
+#include <net/net.h>
 #endif
 #include "ui_layout.h"
 #include "switch_flow.h"
+#include "sd_default.h"
+#include "plugin_lifecycle.h"
 
 SYS_PROCESS_PARAM(1001,0x100000);
 #define HOST_SIZE (32u*1024*1024)
@@ -32,6 +38,8 @@ SYS_PROCESS_PARAM(1001,0x100000);
 #define LOG_PATH "/dev_hdd0/tmp/ps3_240p.log"
 #define APP_ACTIVE_FLAG "/dev_hdd0/tmp/240p_app.active"
 #define ENFORCER_FLAG "/dev_hdd0/tmp/240p_enforcer.on"
+#define TARGET_PATH "/dev_hdd0/tmp/240p_target.mode"
+#define ENFORCER_READY "/dev_hdd0/tmp/240p_enforcer.ready"
 #define META240_FLAG "/dev_hdd0/tmp/240p_meta240.on"
 #define SCALER_FLAG "/dev_hdd0/tmp/240p_scaler.on"
 static uint32_t *buffers[2],*software,offsets[2],pitch,label_value;
@@ -51,6 +59,7 @@ static uint64_t log_bytes;
 static unsigned held[7];
 static int input_armed=1;
 static uint64_t presented_hash;
+static uint64_t redraw_until;
 static unsigned hash_frames;
 static unsigned submitted_frames,completed_frames;
 static uint64_t next_heartbeat;
@@ -179,14 +188,7 @@ static int drain(void)
 }
 static int active_raster_height(void)
 {
- /* The experiment draws the full source height so a scaling failure is
-  * visible. The flag requests code edits; it does not prove scaling works. */
- if(patch.scaler_mode || state.displayMode.resolution==4)return resolution.height;
- if(flow.pending)return 240;
- if(patch.ready){
-  if(patch_state(&patch,0)==STATE_PATCHED&&state.displayMode.resolution==4)return 240;
-  if(patch_state(&patch,1)==STATE_PATCHED&&state.displayMode.resolution==5)return 240;
- }
+ /* Both field-fetch recipes consume the full 480/576-line framebuffer. */
  return resolution.height;
 }
 static int read_video(void)
@@ -224,7 +226,7 @@ static int load_vsh_plugin(unsigned slot, const char *path) {
 #ifndef APP_HOST_TEST
  int rc;
  app_log("Cobra load begin slot=%u", slot);
- lv2syscall5(8, 0x1ee7, slot, (uint64_t)(uintptr_t)path, 0, 0);
+ lv2syscall5(8, COBRA_LOAD_VSH_PLUGIN, slot, (uint64_t)(uintptr_t)path, 0, 0);
  rc=(int)p1; /* r3 holds the syscall result; register_passing_1 reads r4 */
  app_log("Cobra load slot=%u rc=%08x", slot, (unsigned)rc);
  return rc;
@@ -235,7 +237,7 @@ static int load_vsh_plugin(unsigned slot, const char *path) {
 static int unload_vsh_plugin(unsigned slot) {
 #ifndef APP_HOST_TEST
  int rc;
- lv2syscall2(8, 0x1ee8, slot);
+ lv2syscall2(8, COBRA_UNLOAD_VSH_PLUGIN, slot);
  rc=(int)p1;
  app_log("Cobra unload slot=%u rc=%08x", slot, (unsigned)rc);
  return rc;
@@ -264,6 +266,48 @@ static void clear_flag(const char *path) {
  (void)path;
 #endif
 }
+static int write_target(unsigned target) {
+#ifndef APP_HOST_TEST
+ int fd=-1;uint64_t wr=0;char data[2]={(char)('0'+target),'\n'};
+ if(sysLv2FsOpen(TARGET_PATH,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&fd,0666,NULL,0))return -1;
+ int rc=sysLv2FsWrite(fd,data,sizeof(data),&wr);
+ if(!rc)rc=sysLv2FsFsync(fd);
+ sysLv2FsClose(fd);return rc||wr!=sizeof(data)?-1:0;
+#else
+ (void)target;return 0;
+#endif
+}
+/* Named setting through the owner's existing webMAN service, loopback only.
+ * Bound socket waits; accept a real HTTP 200 plus the setting's readback. */
+static int registry_request(void *u,const char *path,char *reply,size_t capacity) {
+ (void)u;
+#ifndef APP_HOST_TEST
+ int owned=netInitialize()==0,rc=-1,fd=socket(AF_INET,SOCK_STREAM,0);
+ if(fd<0){if(owned)netDeinitialize();return -1;}
+ struct timeval timeout={3,0};
+ if(setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout))||
+    setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout)))goto done;
+ struct sockaddr_in addr;memset(&addr,0,sizeof(addr));addr.sin_family=AF_INET;
+ addr.sin_port=htons(80);addr.sin_addr.s_addr=htonl(0x7f000001u);
+ if(connect(fd,(struct sockaddr *)&addr,sizeof(addr)))goto done;
+ char request[256];int n=snprintf(request,sizeof(request),"GET %s HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",path);
+ if(n<0||(size_t)n>=sizeof(request))goto done;
+ for(int sent=0;sent<n;){int count=(int)send(fd,request+sent,(size_t)(n-sent),0);if(count<=0)goto done;sent+=count;}
+ size_t used=0;reply[0]=0;
+ while(used+1<capacity){
+  int count=(int)recv(fd,reply+used,capacity-used-1,0);
+  if(count<0)goto done;
+  if(!count)break;
+  used+=(size_t)count;reply[used]=0;
+ }
+ if(used+1==capacity)goto done;
+ if(!strncmp(reply,"HTTP/1.0 200",12)||!strncmp(reply,"HTTP/1.1 200",12))rc=0;
+done:
+ socketclose(fd);if(owned)netDeinitialize();return rc;
+#else
+ (void)path;(void)reply;(void)capacity;return -1;
+#endif
+}
 static int cobra_mapi(unsigned op, uint64_t a, uint64_t b, uint64_t c, uint64_t d) {
 #ifndef APP_HOST_TEST
  lv2syscall6(8, 0x7777, op, a, b, c, d);
@@ -273,40 +317,20 @@ static int cobra_mapi(unsigned op, uint64_t a, uint64_t b, uint64_t c, uint64_t 
  return (int)0x80010006u;
 #endif
 }
-/* Slot scan (pattern from buzz-pad-bridge autoload/app.c): PS3MAPI op 0x47
- * reports the resident plugin name/path per slot, 0x80010006 = empty.
- * Returns the slot with a resident vsh_240p plugin if any, else the first
- * free slot, else 0. */
-static unsigned find_slot(unsigned *resident) {
-#ifndef APP_HOST_TEST
- static char name[96], path[256];
- unsigned free_slot=0;*resident=0;
- for (unsigned s=1;s<=6;s++) {
-  name[0]=0;path[0]=0;
-  int rc=cobra_mapi(0x47, s, (uint64_t)(uintptr_t)name, (uint64_t)(uintptr_t)path, 0);
-  if (rc && rc != (int)0x80010006u) {app_log("VSH slot %u inspect rc=%08x", s, (unsigned)rc);continue;}
-  app_log("VSH slot %u name=%s path=%s", s, name, path);
-  if (name[0] && strstr(name, "vsh_240p")) {*resident=s;return s;}
-  if (!name[0] && !path[0] && !free_slot) free_slot=s;
- }
- return free_slot;
-#else
- (void)resident;return 0;
-#endif
+static int helper_info(void *u,unsigned slot,char *name,char *path)
+{
+ (void)u;
+ int rc=cobra_mapi(0x47,slot,(uint64_t)(uintptr_t)name,(uint64_t)(uintptr_t)path,0);
+ name[95]=path[255]=0;
+ app_log("VSH slot %u rc=%08x name=%s path=%s",slot,(unsigned)rc,name,path);return rc;
 }
-static void unload_enforcer(void) {
-#ifndef APP_HOST_TEST
- static char name[96], path[256];
- unsigned found=0;
- for (unsigned s=1;s<=6;s++) {
-  name[0]=0;path[0]=0;
-  int rc=cobra_mapi(0x47, s, (uint64_t)(uintptr_t)name, (uint64_t)(uintptr_t)path, 0);
-  if (rc==0 && name[0] && strstr(name, "vsh_240p")) {unload_vsh_plugin(s);found++;}
- }
- if (!found)app_log("Enforcer not resident");
-#else
- (void)unload_vsh_plugin;(void)cobra_mapi;
-#endif
+static int helper_load(void *u,unsigned slot)
+{(void)u;return load_vsh_plugin(slot,"/dev_hdd0/plugins/vsh_240p.sprx");}
+static int helper_unload(void *u,unsigned slot)
+{(void)u;return unload_vsh_plugin(slot);}
+static plugin_lifecycle helper_ops(void)
+{
+ plugin_lifecycle ops={0};ops.info=helper_info;ops.load=helper_load;ops.unload=helper_unload;return ops;
 }
 /* Deploy is needed unless the installed file is byte-identical to the staged
  * build. A size-only comparison silently skipped the deploy whenever a
@@ -402,7 +426,13 @@ static int frame(const ui_view *view)
   * the OS draws. Stop application input/edits, not the presentation loop. */
  if(refresh&&!os_active()){
   if(drain())return -1;
-  if(!os_active()){refresh=0;presented_hash=0;hash_frames=0;if(read_video())return -1;}
+  if(!os_active()){
+   refresh=0;presented_hash=0;hash_frames=0;
+   /* VSH can finish writing dimming/spinner pixels after its close events.
+    * Repaint through the handoff instead of caching the first two frames. */
+   redraw_until=now()+1000000;
+   if(read_video())return -1;
+  }
  }
  /* Prime BOTH registered buffers on content change before idle reuse. */
  uint64_t hash=UINT64_C(14695981039346656037);
@@ -421,7 +451,7 @@ static int frame(const ui_view *view)
  hash=(hash^(unsigned)eff_h)*UINT64_C(1099511628211);
  hash=(hash^(unsigned)pattern_mode)*UINT64_C(1099511628211);
  if(hash!=presented_hash){hash_frames=0;presented_hash=hash;}
- if(hash_frames>=2&&!os_active()){usleep(16000);return 0;}
+ if(hash_frames>=2&&!os_active()&&now()>=redraw_until){usleep(16000);return 0;}
  if(drain())return -1;
  int is_interlaced=(state.displayMode.scanMode==VIDEO_SCANMODE_INTERLACE);
  if(patch.ready&&(patch_state(&patch,0)==STATE_PATCHED||patch_state(&patch,1)==STATE_PATCHED))is_interlaced=0;
@@ -488,7 +518,7 @@ static void diagnostics(void)
  else snprintf(cache,sizeof(cache),"AV cached raster (not a measurement):\nHead 0: %u active / %u total, state=%u\nHead 1: %u active / %u total, state=%u",
   cached_video.head[0].active_lines,cached_video.head[0].total_lines,cached_video.head[0].state,
   cached_video.head[1].active_lines,cached_video.head[1].total_lines,cached_video.head[1].state);
- snprintf(text,sizeof(text),"Build 1.2.0 / diagnostics\nReported output: %ux%u %s\nPort: 0x%02x (RGB/SCART supported)\nNTSC tables: %s\nPAL tables: %s\nLV1 access: %s\nAV UART permission: %s (no command sent)\nLog: %s\n\n%s\n\n%s\n\nTiming tests enabled with 15-second automatic recovery safeguard.",
+ snprintf(text,sizeof(text),"CRT Toolset 1.3.6 / diagnostics\nReported output: %ux%u %s\nPort: 0x%02x (RGB/SCART supported)\nNTSC tables: %s\nPAL tables: %s\nLV1 access: %s\nAV UART permission: %s (no command sent)\nLog: %s\n\n%s\n\n%s\n\nTiming tests enabled with 15-second automatic recovery safeguard.",
   resolution.width,resolution.height,state.displayMode.scanMode==VIDEO_SCANMODE_INTERLACE?"interlaced":"progressive",
   device.portType,memory_state(patch_state(&patch,0)),memory_state(patch_state(&patch,1)),
   backend==1?"PS3MAPI":backend==2?"CFW 8/9":"not verified",
@@ -496,50 +526,118 @@ static void diagnostics(void)
   cache,patch.error[0]?patch.error:patch.ready?"Timing records match the supported 4.93 layout.":"Choose Recheck timing memory to inspect the tables.");
  status("Output / diagnostics",text);
 }
-static void test_mode(int family)
+/* Called only after a checked transition; no persistent setting changes until
+ * the owner accepts the picture. Losing sync therefore leaves a timer running. */
+static int confirm_picture(const char *label)
+{
+ uint64_t deadline=now()+15000000;
+ while(!exiting&&now()<deadline){
+  uint64_t t=now();unsigned remaining=t<deadline?(unsigned)((deadline-t+999999)/1000000):0;
+  char text[384];snprintf(text,sizeof(text),"%s\n\nCross: keep / Circle: restore\nAutomatic restore in %u seconds.\n\nCheck the full picture and display sync.",label,remaining);
+  ui_view view={0};view.title="Keep this picture?";view.text=text;view.page=-1;
+  if(frame(&view))break;unsigned key=input();
+  if(!os_active()&&(key&CROSS))return 1;
+  if(key&CIRCLE)break;
+ }
+ return 0;
+}
+static void recover_picture(void)
+{
+ int rc=switch_revert(&flow);app_log("Automatic/cancel recovery=%d %s",rc,flow.error);
+ if(!exiting)status(rc?"Recovery needs reboot":"Previous settings restored",rc?flow.error:"Previous RAM values and display mode restored. The saved boot default was not changed.");
+}
+static int begin_picture(int family,unsigned target)
 {
  if(!switch_tests_available()){
   app_log("Blocked timing action family=%d; no timing/output changes",family);
-  status("Timing test unavailable","288p activation is being rebuilt after the failed signal test. Choose Recheck timing memory, then Output / diagnostics to inspect the current AV state.");return;
+  status("Timing test unavailable","This build disables display transitions.");return -1;
  }
- if(!log_ok||log_fd<0){status("Test stopped","Cannot save diagnostic log. No timing test started.");return;}
- if(read_video()||inspect()){status("Test stopped",patch.error[0]?patch.error:"Could not query output state");return;}
- /* Present and drain a normal frame before any output transition. */
- ui_view working={0};working.title="Changing SD timing";working.text="Testing candidate timing. Picture confirmation follows; automatic recovery in 15 seconds.";working.page=-1;
- if(frame(&working))return;
- app_log("BEGIN experiment family=%d original_id=%u",family,state.displayMode.resolution);
- if(switch_begin(&flow,family,state.displayMode.resolution,analog())){
-  app_log("Experiment failed: %s",flow.error);status("Test stopped",flow.error);return;
+ if(!log_ok||log_fd<0){status("Test stopped","Cannot save diagnostic log. No timing test started.");return -1;}
+ if(read_video()||inspect()){status("Test stopped",patch.error[0]?patch.error:"Could not query output state");return -1;}
+ ui_view view={0};view.title="Changing SD timing";view.text="Picture confirmation follows; automatic recovery in 15 seconds.";view.page=-1;
+ if(frame(&view))return -1;
+ app_log("BEGIN experiment family=%d target=%u original_id=%u",family,target,state.displayMode.resolution);
+ if(switch_begin_target(&flow,family,target,state.displayMode.resolution,analog())){
+  app_log("Experiment failed: %s",flow.error);status("Test stopped",flow.error);return -1;
  }
- if(!patch_read_cached_video(&patch,&cached_video)){
-  int in_cache=patch_candidate_in_cache(&patch,&cached_video,family);
-  app_log("Post-switch AV CACHE: match=%d Head0(active=%u,total=%u,scan=%08x,vid=%x) Head1(active=%u,total=%u,scan=%08x,vid=%x)",
-   in_cache,
-   cached_video.head[0].active_lines,cached_video.head[0].total_lines,cached_video.head[0].scan_control,cached_video.head[0].vid,
-   cached_video.head[1].active_lines,cached_video.head[1].total_lines,cached_video.head[1].scan_control,cached_video.head[1].vid);
+ int cache_rc=patch_read_cached_video(&patch,&cached_video);
+ int active=!cache_rc&&patch_candidate_on_head(&patch,&cached_video,target==5?1:0,1);
+ app_log("Post-switch analog AV cache match=%d Head0=%u/%u Head1=%u/%u (software cache only)",
+  active,cached_video.head[0].active_lines,cached_video.head[0].total_lines,
+  cached_video.head[1].active_lines,cached_video.head[1].total_lines);
+ if(!active){
+  int rc=switch_revert(&flow);
+  status("Timing was not activated",rc?flow.error:"The active analog timing did not match the candidate. Previous timing and mode were restored. See the diagnostic log.");return -1;
  }
- uint64_t deadline=now()+15000000;int keep=0;
- while(!exiting&&now()<deadline){
-  uint64_t t=now();unsigned remaining=t<deadline?(unsigned)((deadline-t+999999)/1000000):0;
-  char text[512];snprintf(text,sizeof(text),"%s candidate loaded (auto restore %us).\nCross: keep / Circle: restore\n\nRuns at quiet Batocera 15.66 kHz line rate (HTotal 3448) @ 60 Hz.\nListen to CRT flyback transformer whine.\nPress Cross to keep or Circle to restore.",
-   family==MODE_240P_NTSC?"240p 60Hz (Quiet 15.66 kHz)":"PAL 288p 50Hz",remaining);
-  ui_view view={0};view.title="Picture test";view.text=text;view.page=-1;
-  if(frame(&view))break;unsigned key=input();
-  if(!system_menu&&(key&CROSS)){keep=1;break;}
-  if(key&CIRCLE)break;
+ return 0;
+}
+static void test_mode(int family)
+{
+ unsigned target=family==MODE_288P_PAL?5:4;
+ if(begin_picture(family,target))return;
+ if(!confirm_picture(target==5?"PAL 288p / nominal 50 Hz":"NTSC 240p / nominal 60 Hz")){recover_picture();return;}
+ switch_keep(&flow);app_log("Owner kept candidate; electrical field parity UNMEASURED");
+ status("Candidate kept","RAM timing changes remain until reboot. The saved boot default and background enforcer preference were not changed.");
+}
+static void enable_mode(unsigned target)
+{
+ if(begin_picture(MODE_ALL_SD,target))return;
+ if(!confirm_picture(target==5?"Enable PAL 288p / nominal 50 Hz":"Enable NTSC 240p / nominal 60 Hz")){recover_picture();return;}
+ switch_keep(&flow);
+ clear_flag(ENFORCER_FLAG);
+ if(write_target(target)){status("Picture enabled; helper stopped","Could not save the background mode preference. RAM timings are active until reboot.");return;}
+ int src_size=0,dst_size=0;
+ uint64_t src_hash=file_digest("/dev_hdd0/game/PS240P001/USRDIR/vsh_240p.sprx",&src_size);
+ uint64_t dst_hash=file_digest("/dev_hdd0/plugins/vsh_240p.sprx",&dst_size);
+ int replace=deploy_needed(src_size,src_hash,dst_size,dst_hash);
+ deploy_enforcer();
+ dst_hash=file_digest("/dev_hdd0/plugins/vsh_240p.sprx",&dst_size);
+ if(deploy_needed(src_size,src_hash,dst_size,dst_hash)){
+  status("Picture enabled; helper stopped","Background plugin deployment could not be verified. RAM timings are active until reboot.");return;
  }
- if(keep){switch_keep(&flow);app_log("User kept candidate; analog waveform UNVERIFIED");status("Candidate kept","Timing table writes and video requests completed. Verify 240p on the display. Exiting leaves these RAM edits until reboot; XMB/game behavior is unverified.");}
- else {
-  int rc=switch_revert(&flow);app_log("Automatic/cancel recovery=%d %s",rc,flow.error);
-  if(!exiting)status(rc?"Recovery needs reboot":"Previous settings restored",rc?flow.error:"Previous RAM values and display requests restored. The diagnostic log contains this attempt.");
+ plugin_lifecycle ops=helper_ops();unsigned slot=0;int reused=0;
+ if(helper_start(&ops,replace,&slot,&reused)){
+  app_log("Enforcer start failed: %s",ops.error);
+  status("Picture enabled; helper stopped",ops.error);return;
  }
+ app_log("Enforcer %s slot=%u target=%u",reused?"reused":"started",slot,target);
+ uint64_t ready_deadline=now()+5000000;
+ while(!flag_present(ENFORCER_READY)&&now()<ready_deadline&&!exiting){(void)pump();usleep(50000);}
+ if(!flag_present(ENFORCER_READY)){
+  app_log("Enforcer native worker not ready");
+  status("Picture enabled; helper stopped","The native display worker is not ready. Reboot if an older helper remains loaded, then enable again. See the helper log.");return;
+ }
+ write_flag(ENFORCER_FLAG);
+ if(!flag_present(ENFORCER_FLAG)){
+  status("Picture enabled; helper stopped","Could not create the background enforcement flag.");return;
+ }
+ status(target==5?"288p background mode enabled":"240p background mode enabled",
+  target==5?"PAL 288p selected. SD fallbacks are corrected to Mode 5 after about two seconds. HD output is untouched. Exit to XMB. Reboot clears the RAM timings.":
+            "NTSC 240p selected. SD fallbacks are corrected to Mode 4 after about two seconds. HD output is untouched. Exit to XMB. Reboot clears the RAM timings.");
+}
+static void stock_mode(unsigned target)
+{
+ if(!switch_tests_available()){status("Stock timing","This build disables display transitions.");return;}
+ if(read_video()||inspect()){status("Switch stopped",patch.error[0]?patch.error:"Output query failed");return;}
+ if(switch_stock_begin(&flow,target,state.displayMode.resolution,analog())){status("Switch stopped",flow.error);return;}
+ if(!confirm_picture(target==5?"Stock 576i / 50 Hz. Cross also saves this boot default.":"Stock 480i / 60 Hz. Cross also saves this boot default.")){recover_picture();return;}
+ int rc=sd_default_save(registry_request,NULL,target);app_log("Saved SD default target=%u rc=%d",target,rc);
+ if(rc){
+  int recovered=switch_revert(&flow);
+  status("Default could not be saved",rc==-2?"webMAN did not verify recovery of the old registry setting. Check /setting/display/tvSystem before rebooting.":
+   recovered?flow.error:"Previous picture restored. webMAN must be running with xRegistry access to save the boot default.");return;
+ }
+ switch_keep(&flow);clear_flag(ENFORCER_FLAG);
+ app_log("Stock selected; background correction disarmed (resident helper retained for reuse)");
+ status(target==5?"576i selected and saved":"480i selected and saved",
+  "Stock timing is active now. The selected XMB/boot default was saved and read back through webMAN. Background correction is stopped. No reboot was requested.");
 }
 int main(void)
 {
  (void)sysLv2FsMkdir("/dev_hdd0/tmp",0777);
  if(sysLv2FsOpen(LOG_PATH,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&log_fd,0666,NULL,0))log_fd=-1;
  write_flag(APP_ACTIVE_FLAG);
- app_log("PS3 240p build 1.2.2; native enabled=%u preparing=%u; timing tests ENABLED",CELL_VIDEO_OUT_OUTPUT_STATE_ENABLED,CELL_VIDEO_OUT_OUTPUT_STATE_PREPARING);
+ app_log("CRT Toolset build 1.3.6; native enabled=%u preparing=%u; timing tests ENABLED",CELL_VIDEO_OUT_OUTPUT_STATE_ENABLED,CELL_VIDEO_OUT_OUTPUT_STATE_PREPARING);
  void *host=memalign(1024*1024,HOST_SIZE);
  if(!host){app_log("Startup failed: host allocation");return 1;}
  int rc=cellSysutilRegisterCallback(0,event,NULL);if(rc){app_log("Startup callback rc=%08x",(unsigned)rc);return 1;}
@@ -560,21 +658,24 @@ int main(void)
   * Recheck timing memory, or occurs when starting a timing test. */
  app_log("UI ready; LV1 inspection deferred until selected");
  const char *items[]={
-  "Enable 240p + 288p (Start Background Enforcer)",
-  "Test 240p 60Hz (Quiet 15.66 kHz Batocera)",
-  "Test PAL 288p 50Hz",
-  "Restore Stock Timing (Stop Enforcer)",
+  "Test 240p 60Hz (15-second recovery)",
+  "Enable 240p 60Hz + background enforcer",
+  "Test PAL 288p 50Hz (15-second recovery)",
+  "Enable 288p 50Hz + background enforcer",
+  "Stock 480i 60Hz + save boot default",
+  "Stock 576i 50Hz + save boot default",
   "Output / diagnostics",
   "Geometry pattern (measure crop)",
   "Recheck timing memory",
   "Exit to XMB"
  };
+ const int item_count=(int)(sizeof(items)/sizeof(items[0]));
  int selected=0,cached_ntsc=STATE_UNKNOWN,cached_pal=STATE_UNKNOWN,outcome=0;
  uint64_t next_memory_poll=0;
  while(!exiting){
   if(!os_active()&&now()>=next_memory_poll){cached_ntsc=patch_state(&patch,0);cached_pal=patch_state(&patch,1);next_memory_poll=now()+1000000;}
-  char title[200];snprintf(title,sizeof(title),"Analog SD timing / v1.2.2\nPAL-60: %s  NTSC: %s",memory_state(cached_pal),memory_state(cached_ntsc));
-  ui_view view={0};view.title=title;view.items=items;view.count=8;view.selected=selected;view.page=-1;
+  char title[200];snprintf(title,sizeof(title),"CRT Toolset / v1.3.6\nPAL: %s  NTSC: %s",memory_state(cached_pal),memory_state(cached_ntsc));
+  ui_view view={0};view.title=title;view.items=items;view.count=item_count;view.selected=selected;view.page=-1;
   if(frame(&view)){app_log("Frame loop stopped: exit_request=%d gpu_ok=%d",exiting,gpu_ok);if(!exiting)outcome=1;break;}
   /* Complete the first pair before accepting a choice, including quit. */
   if(submitted_frames<2||completed_frames<2)continue;
@@ -585,44 +686,17 @@ int main(void)
    continue;
   }
   if(key&CIRCLE)break;
-  if(key&UP)selected=(selected+7)%8;if(key&DOWN)selected=(selected+1)%8;
+  if(key&UP)selected=(selected+item_count-1)%item_count;if(key&DOWN)selected=(selected+1)%item_count;
   if(key&CROSS){
-   if(selected==0){
-    /* inspect() reads the optional metadata/scaler experiment flags.
-     * Neither flag proves the geometry fix works on the analog output. */
-     if(read_video()||inspect())status("Apply Error",patch.error[0]?patch.error:"Output query failed");
-    else if(switch_begin(&flow, MODE_ALL_SD, state.displayMode.resolution, analog())){
-     status("Apply Error", flow.error[0]?flow.error:"Failed to apply 240p/288p");
-    } else {
-     switch_keep(&flow);
-     read_video();
-     write_flag(ENFORCER_FLAG);
-     deploy_enforcer();
-     unsigned resident=0, slot=find_slot(&resident);
-     if (resident) app_log("Enforcer already resident in slot %u", resident);
-     else if (!slot) {app_log("No free VSH plugin slot");clear_flag(ENFORCER_FLAG);}
-     else if (load_vsh_plugin(slot, "/dev_hdd0/plugins/vsh_240p.sprx")) clear_flag(ENFORCER_FLAG);
-     status("240p/288p Enforcer Active",
-      "Mode 4 and Mode 5 timings patched in RAM.\n"
-      "Enforcer armed and running in VSH.\n\n"
-      "- A 576i fallback is corrected to Mode 4 (240p) after ~2 s.\n"
-      "- 480i and HD modes are never touched.\n"
-      "- Passive while this app is open.\n\n"
-      "RAM edits remain active until reboot.\n"
-      "Exit to XMB to enjoy native scanlines!");
-    }
-   }
-   else if(selected==1)test_mode(MODE_240P_NTSC);
+   if(selected==0)test_mode(MODE_240P_NTSC);
+   else if(selected==1)enable_mode(4);
    else if(selected==2)test_mode(MODE_288P_PAL);
-   else if(selected==3){
-    clear_flag(ENFORCER_FLAG);
-    unload_enforcer();
-    if(!switch_tests_available())status("Stock timing","Rebooting clears the timing edits from RAM.");
-    else if(read_video()||inspect())status("Restore stopped",patch.error[0]?patch.error:"Output query failed");
-    else {int rc=switch_stock(&flow,state.displayMode.resolution,analog());status(rc?"Restore stopped":"Stock timing restored",rc?flow.error:"Stock timing restored and background enforcer stopped.");}
-   }else if(selected==4)diagnostics();
-   else if(selected==5){pattern_mode=1;app_log("Geometry pattern shown; content=%u lines",(unsigned)active_raster_height());}
-   else if(selected==6){int rc=inspect();status(rc?"Memory unavailable":"Memory checked",rc?patch.error:"All target records are recognized. No memory writes performed.");}
+   else if(selected==3)enable_mode(5);
+   else if(selected==4)stock_mode(4);
+   else if(selected==5)stock_mode(5);
+   else if(selected==6)diagnostics();
+   else if(selected==7){pattern_mode=1;app_log("Geometry pattern shown; content=%u lines",(unsigned)active_raster_height());}
+   else if(selected==8){int rc=inspect();status(rc?"Memory unavailable":"Memory checked",rc?patch.error:"All target records are recognized. No memory writes performed.");}
    else break;
    next_memory_poll=0;
   }
@@ -630,7 +704,9 @@ int main(void)
  if(flow.pending)(void)switch_revert(&flow);
  app_log("Exit; pending_recovery=%d",flow.pending);
  clear_flag(APP_ACTIVE_FLAG);
- (void)ioPadEnd();(void)cellSysutilUnregisterCallback(0);
+ app_log("Exit: active flag cleared");
+ (void)ioPadEnd();app_log("Exit: pad closed");
+ (void)cellSysutilUnregisterCallback(0);app_log("Exit: callbacks removed; process termination next");
  if(log_fd>=0)(void)sysLv2FsClose(log_fd);
  /* Keep GPU-visible allocations alive through process teardown. */
  sysProcessExit(outcome);return outcome;

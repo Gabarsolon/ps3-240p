@@ -6,7 +6,9 @@
 
 enum PatchMode { MODE_240P_NTSC, MODE_288P_PAL, MODE_ALL_SD };
 enum PatchState { STATE_UNKNOWN=-1, STATE_STOCK, STATE_PATCHED, STATE_MIXED };
-#define PATCH_WORDS 44
+#define PATCH_WORDS 54
+#define PAL_SPECIAL_META_INDEX 44
+#define PAL_SPECIAL_RASTER_INDEX 47
 #define VIDEO_PROBE_WORDS 27
 #define METADATA_PROBE_PROFILES 4
 typedef struct {
@@ -46,4 +48,5 @@ int patch_undo(patch_context *); /* Restore exact pre-experiment snapshot. */
 int patch_read_cached_video(patch_context *,patch_cached_video *);
 /* AV-service software cache match only; not a physical waveform measurement. */
 int patch_candidate_in_cache(const patch_context *,const patch_cached_video *,int family);
+int patch_candidate_on_head(const patch_context *,const patch_cached_video *,int family,int head);
 #endif

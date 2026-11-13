@@ -75,7 +75,8 @@
  * field-timing experiment. Keep full 480-line source fetching, use an even
  * 522-line frame (261 lines/field), and retain the successful field-sized
  * packed window. Owner reported a full, correct picture. Electrical field
- * parity remains unmeasured. The older PAL candidate below is unchanged.
+ * parity remains unmeasured. PAL below applies the same field-fetch method
+ * to 576 source lines / 624 frame lines; its picture is not yet verified.
  * Source-interlace metadata here controls fetching; it is not a waveform
  * classification. Do not halve active height while retaining field fetch.
  */
@@ -123,7 +124,7 @@ static const uint64_t g_patch_240p_encoder[ENCODER_WORDS] = {
 };
 
 /* -------------------------------------------------------------------------
- * PAL-60 240p (720x240 @ 60.10 Hz, 15.625 kHz scan - Quiet European CRT)
+ * PAL 288p candidate (576 source / 624 frame lines; 312 lines per field)
  * ------------------------------------------------------------------------- */
 static const uint64_t g_stock_288p_metadata[METADATA_WORDS] = {
     0x4248000000000001ULL,
@@ -132,7 +133,7 @@ static const uint64_t g_stock_288p_metadata[METADATA_WORDS] = {
 };
 
 static const uint64_t g_patch_288p_metadata[METADATA_WORDS] = {
-    0x4270624d00000000ULL,
+    0x4248000000000001ULL,
     0x0000000400000b40ULL,
     0x0000024000000001ULL
 };
@@ -150,10 +151,10 @@ static const uint64_t g_stock_288p_raster[RASTER_WORDS] = {
 static const uint64_t g_patch_288p_raster[RASTER_WORDS] = {
     0x00000b3f00000d7fULL,
     0x00000b6f00000c6bULL,
-    0x000000ef00000103ULL,
-    0x000000f4000000f3ULL,
-    0x000000f6052d04afULL,
-    0x04af03b300f600f3ULL,
+    0x0000023f0000026fULL,
+    0x0000024500000244ULL,
+    0x0000024a052d04afULL,
+    0x04af03b301250122ULL,
     0x0001000011000000ULL
 };
 
@@ -165,12 +166,28 @@ static const uint64_t g_patch_288p_encoder[ENCODER_WORDS] = {
     0x3500360037003800ULL
 };
 
+/* PROVEN: head 1 / internal profile 4 bypasses the ordinary PAL arrays.
+ * Private 4.93 sysmgr setup 0x800005e4 selects these pointer-backed records
+ * at 0xc000af68/0xc000af70 (VAs 0x80038ad8/0x80038b10). Live capture:
+ * local_only/activation/pal288-development/special-path/pointers.json.
+ * Their stock active height is 574. Candidate uses the full 576 source
+ * recipe above; no code edits or MMIO writes are needed. */
+static const uint64_t g_stock_pal_special_metadata[METADATA_WORDS] = {
+    0x4248000000000001ULL, 0x0000000400000b40ULL, 0x0000023e00000001ULL
+};
+static const uint64_t g_stock_pal_special_raster[RASTER_WORDS] = {
+    0x00000b3f00000d7fULL, 0x00000b6f00000c6bULL,
+    0x0000023d00000270ULL, 0x0000024500000244ULL,
+    0x0000024a052d04afULL, 0x04af03b3024a0244ULL,
+    0x0003000011000000ULL
+};
+
 /* -------------------------------------------------------------------------
  * Declared metadata-height intent, per candidate family (NTSC, PAL).
  *
  * PROVEN from the arrays above: NTSC now retains 480 source lines with
- * a 522-line field-fetch frame; the older PAL candidate emits 240 raster
- * lines with 576-line metadata. The metadata-height A/B was
+ * a 522-line field-fetch frame; PAL retains 576 source lines and uses a
+ * 624-line frame. The earlier metadata-height A/B was
  * reported visually unchanged by the owner in the recovered OpenCode
  * session; this mismatch alone is not proof of the crop's cause.
  *

@@ -11,10 +11,11 @@ typedef struct {
  int pending;
  char error[200];
 } switch_flow;
-/* Production timing transitions are disabled after owner-reported signal
- * loss and a PS-menu console freeze. Host fixtures can exercise old logic. */
+/* Production builds explicitly opt into checked SD transitions. */
 int switch_tests_available(void);
 int switch_begin(switch_flow *,int family,unsigned current,int analog);
+int switch_begin_target(switch_flow *,int family,unsigned target,unsigned current,int analog);
+int switch_stock_begin(switch_flow *,unsigned target,unsigned current,int analog);
 int switch_revert(switch_flow *);
 void switch_keep(switch_flow *);
 int switch_stock(switch_flow *,unsigned current,int analog);

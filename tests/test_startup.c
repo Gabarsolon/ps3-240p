@@ -21,6 +21,8 @@ static uint64_t overlay_started;
 static unsigned overlay_flips;
 static uint32_t deferred_label;
 static unsigned uart_probes;
+static int late_overlay_write,repainted;
+static uint32_t clean_pixel;
 int mock_uart_permission(uint64_t buffer,uint64_t bytes,uint64_t mode)
 {assert(!buffer&&!bytes&&mode==2);uart_probes++;return scenario==16?0:(int)0x80010003u;}
 void *memalign(size_t a,size_t n){(void)a;return malloc(n);}
@@ -40,6 +42,29 @@ int cellSysutilRegisterCallback(int slot,void (*fn)(uint64_t,uint64_t,void *),vo
 int cellSysutilUnregisterCallback(int slot){(void)slot;return 0;}
 int cellSysutilCheckCallback(void)
 {
+ if(scenario==18&&flips>=2&&!overlay_opened){
+  overlay_opened=1;overlay_started=mock_time;clean_pixel=buffers[0][0];
+  sysutil_callback(CELL_SYSUTIL_DRAWING_BEGIN,0,sysutil_user);
+  sysutil_callback(CELL_SYSUTIL_SYSTEM_MENU_OPEN,0,sysutil_user);
+ }
+ if(scenario==18&&overlay_opened&&!overlay_closed&&mock_time-overlay_started>=100000){
+  overlay_closed=1;sysutil_callback(CELL_SYSUTIL_SYSTEM_MENU_CLOSE,0,sysutil_user);
+  sysutil_callback(CELL_SYSUTIL_DRAWING_END,0,sysutil_user);
+ }
+ /* A late firmware overlay write AFTER the close events and the first
+  * refreshed frames. With no controller input, both buffers must recover. */
+ if(scenario==18&&overlay_closed&&!late_overlay_write&&mock_time-overlay_started>=300000){
+  late_overlay_write=1;buffers[0][0]=buffers[1][0]=0x12345678;
+ }
+ if(scenario==18&&late_overlay_write&&!quit_sent&&mock_time-overlay_started>=1400000){
+  repainted=buffers[0][0]==clean_pixel&&buffers[1][0]==clean_pixel;
+  quit_sent=1;sysutil_callback(CELL_SYSUTIL_REQUEST_EXITGAME,0,sysutil_user);
+ }
+ /* Reproduce an extended, unchanged menu followed by an OS exit request.
+  * The callback pump must keep working even when rendering is skipped. */
+ if(scenario==17&&mock_time>=UINT64_C(480000000)&&!quit_sent){
+  quit_sent=1;sysutil_callback(CELL_SYSUTIL_REQUEST_EXITGAME,0,sysutil_user);
+ }
  if(scenario>=9&&scenario<=14&&flips>=2&&!overlay_opened){
   overlay_opened=1;overlay_started=mock_time;
   sysutil_callback(CELL_SYSUTIL_DRAWING_BEGIN,0,sysutil_user);
@@ -99,7 +124,8 @@ int ioPadGetData(int port,padData *p)
   else if(pad_calls==4)p->BTN_CROSS=1;
   else if(pad_calls==5||pad_calls==7)p->BTN_CIRCLE=1;
   pad_calls++;assert(pad_calls<=8);
- }else if(scenario==8){
+ }else if(scenario==17||scenario==18){pad_calls++;assert(pad_calls<30000);}
+ else if(scenario==8){
   /* 7-item menu: DOWN, release, DOWN reach the PAL 288p test (item 2). */
   if(pad_calls==0||pad_calls==2)p->BTN_DOWN=1;
   else if(pad_calls==3)p->BTN_CROSS=1;
@@ -132,7 +158,14 @@ int main(int argc,char **argv)
  assert(switch_stock(&production,5,1)==-1&&configures==0&&state_reads==0);
  assert(strstr(production.error,"disabled"));
  int rc=ps3_app_main();
- if(scenario==15||scenario==16){
+ if(scenario==18){
+  assert(rc==0&&exit_code==0&&quit_sent&&late_overlay_write&&repainted);
+  assert(overlay_closed&&flips>8&&configures==1);
+ }else if(scenario==17){
+  assert(rc==0&&exit_code==0&&quit_sent&&configures==1&&flips==2);
+  assert(mock_time>=UINT64_C(480000000)&&pad_calls>10000);
+  assert(strstr(log_capture,"Sysutil EXIT_GAME")&&strstr(log_capture,"Exit; pending_recovery=0"));
+ }else if(scenario==15||scenario==16){
   assert(rc==0&&exit_code==0&&configures==1&&uart_probes==1&&uart_probed);
   assert(!patch.ready&&backend==0&&pad_calls==8);
   assert(uart_permission==(scenario==16?0:(int)0x80010003u));

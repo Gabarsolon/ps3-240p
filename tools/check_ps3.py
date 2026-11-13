@@ -1,6 +1,6 @@
 import urllib.request, re, ftplib
 try:
-    url = 'http://192.168.0.169/xmb.ps3(/setting/display/tvSystem)'
+    url = 'http://192.168.0.169/xmb.ps3$xregistry(/setting/display/tvSystem)'
     res = urllib.request.urlopen(url, timeout=5).read().decode('latin-1')
     m = re.search(r'xregistry\([^)]+\)\s*=>\s*([^<]+)', res)
     print('Current tvSystem:', m.group(1).strip() if m else 'ERR', '(Raw:', res[:200], ')')

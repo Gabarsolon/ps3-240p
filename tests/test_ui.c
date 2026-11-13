@@ -14,15 +14,16 @@ static void save_ppm(const char *path,const uint32_t *p,int w,int h)
 }
 int main(int argc,char **argv)
 {
- const char *items[]={"PAL 288p (test unavailable)","NTSC 240p (test unavailable)","Stock timing / reboot info","Output / diagnostics","Recheck timing memory","Exit to XMB"};
+ const char *items[]={"Test 240p 60Hz (15-second recovery)","Enable 240p 60Hz + background enforcer","Test PAL 288p 50Hz (15-second recovery)","Enable 288p 50Hz + background enforcer","Stock 480i 60Hz + save boot default","Stock 576i 50Hz + save boot default","Output / diagnostics","Geometry pattern (measure crop)","Recheck timing memory","Exit to XMB"};
+ const int item_count=(int)(sizeof(items)/sizeof(items[0]));
  int sizes[][2]={{720,240},{720,288},{720,480},{720,576},{1280,720},{1920,1080}};
  for(int n=0;n<6;n++)for(int wide=0;wide<2;wide++){
   int w=sizes[n][0],h=sizes[n][1];uint32_t *p=malloc(((size_t)w*h+2)*4);assert(p);
   p[0]=p[w*h+1]=0x12345678;
   ui_canvas canvas={p+1,w,observe,NULL};ui_result result;
   ui_layout_init(&l,w,h,wide,n>=2&&n<4);
-  ui_view v={0};v.title="Analog SD timing / v1.1.4\nPAL: unavailable  NTSC: unavailable";v.items=items;v.count=6;v.page=-1;
-  for(int i=0;i<6;i++){v.selected=i;assert(!ui_render(&l,&v,&canvas,&result));assert(result.selection_visible);}
+  ui_view v={0};v.title="CRT Toolset / v1.3.6\nPAL: candidate  NTSC: candidate";v.items=items;v.count=item_count;v.page=-1;
+  for(int i=0;i<item_count;i++){v.selected=i;assert(!ui_render(&l,&v,&canvas,&result));assert(result.selection_visible);}
   v.selected=0;assert(!ui_render(&l,&v,&canvas,&result));
   if(argc>1&&n==1&&!wide)save_ppm(argv[1],p+1,w,h);
   v.items=NULL;v.count=0;v.title="Picture test";

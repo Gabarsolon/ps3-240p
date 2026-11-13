@@ -169,7 +169,10 @@ def check_elf(elf):
         inside = [r for r in relocations if entry <= r["site"] < end]
         assert inside, f"{name} has no branch relocation"
         last = inside[-1]
-        assert last["value"] == exit_descriptor, (
+        # Local calls may relocate against the .opd SECTION symbol plus an
+        # addend instead of the named function symbol. Both describe the
+        # same function descriptor; ignoring r_addend rejects valid builds.
+        assert last["value"] + last["addend"] == exit_descriptor, (
             f"{name}'s final branch does not target exit_thread")
         assert end - last["site"] <= 4 * TAIL_WINDOW, (
             f"{name} does not end on the thread exit")

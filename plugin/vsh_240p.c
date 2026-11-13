@@ -1,33 +1,9 @@
-/* SPDX-License-Identifier: MIT. VSH resident SD corrector (safe v3).
- *
- * v1 (2026-11-11) froze the console. Root causes, checked against the SDK
- * headers (cell/cell_video_out.h, sysutil/video.h):
- *   - the scanMode test was inverted: VIDEO_SCANMODE_INTERLACE is 0 and
- *     PROGRESSIVE is 1, so the corrector re-fired on every 500 ms poll;
- *   - every fired configure carried pitch = 0.
- *
- * v3 contract (loader ABI, corrected):
- *   - Cobra's loadprx runs module_start on the loader thread and waits for
- *     that thread to TERMINATE. Returning normally from module_start never
- *     completes the syscall, so the caller's loadprx hangs forever - that is
- *     what froze the app inside "Cobra load begin slot=2" (PROVEN: the
- *     sibling plugin ps3buzz_vsh ends module_start with buzz_exit_thread(),
- *     syscall 41, and its loads always return).
- *   - module_start therefore ends with exit_thread() and never returns;
- *     module_stop joins the worker and also ends with exit_thread().
- *   - v1 was blamed on syscall 41 for the freeze; that was wrong. The real
- *     v1 faults were the inverted scanMode test and pitch = 0, both fixed
- *     in v2. The loader contract was the separate v3 freeze.
- *
- * v2 contract (timing behaviour, unchanged in v3):
- *   - armed only while /dev_hdd0/tmp/240p_enforcer.on exists;
- *   - passive while /dev_hdd0/tmp/240p_app.active exists, because the
- *     switcher app manages its own transitions (flip drain + readback);
- *   - corrects only PAL 576i (resolution 5, scanMode 0) to resolution 4,
- *     whose patched LV1 timing table outputs 240p; 480i and HD are untouched;
- *   - requires ~2 s of stable readback before acting, at most two
- *     corrections per episode, 30 s idle after failures;
- *   - every event is logged to /dev_hdd0/tmp/vsh_240p.log.
+/* SPDX-License-Identifier: MIT. Native VSH SD corrector (v5).
+ * Only corrects the opposite SD family; HD stays untouched. Polling is
+ * disarmed without the enable flag and paused while the app is active.
+ * Video calls resolve genuine VSH interfaces by export NID (vsh_video.c).
+ * The former raw syscalls 107/108 were condition-variable APIs, not video.
+ * Start/stop exit their loader thread with syscall 41; the worker is joined.
  */
 #include <sys/prx_module.h>
 #include <sys/thread.h>
@@ -37,9 +13,13 @@
 #include <ppu-lv2.h>
 #include <stdint.h>
 #include <stdatomic.h>
+#include "../app/source/enforcer_mode.h"
+#include "vsh_video.h"
 
 #define ENFORCER_FLAG   "/dev_hdd0/tmp/240p_enforcer.on"
 #define APP_ACTIVE_FLAG "/dev_hdd0/tmp/240p_app.active"
+#define TARGET_PATH     "/dev_hdd0/tmp/240p_target.mode"
+#define READY_PATH     "/dev_hdd0/tmp/240p_enforcer.ready"
 #define LOG_PATH        "/dev_hdd0/tmp/vsh_240p.log"
 #define LOG_LIMIT       (64u * 1024u)
 
@@ -48,47 +28,12 @@
 #define SCAN_INTERLACE  0u
 #define ASPECT_16_9     2u
 #define ASPECT_4_3      1u
-#define PITCH_720_XRGB  2880u /* 720 * 4 (XRGB); v1 sent 0 here */
 #define DEBOUNCE_TICKS  4u    /* 4 x 500 ms = 2 s of stable 576i */
 #define MAX_ATTEMPTS    2u
 #define IDLE_MS         30000u
 
-typedef struct {
-    uint8_t  resolution;
-    uint8_t  scanMode;
-    uint8_t  conversion;
-    uint8_t  aspect;
-    uint8_t  padding[2];
-    uint16_t refreshRates;
-} videoDisplayMode;
-
-typedef struct {
-    uint8_t          state;
-    uint8_t          colorSpace;
-    uint8_t          padding[6];
-    videoDisplayMode displayMode;
-} videoState;
-
-typedef struct {
-    uint8_t  resolution;
-    uint8_t  format;
-    uint8_t  aspect;
-    uint8_t  padding[9];
-    uint32_t pitch;
-} videoConfiguration;
-
 static inline void nap_ms(uint32_t ms) {
     sys_timer_usleep((uint64_t)ms * 1000u);
-}
-
-static inline int sys_video_configure(uint32_t videoOut, videoConfiguration *cfg) {
-    lv2syscall4(107, (uint64_t)videoOut, (uint64_t)(uintptr_t)cfg, 0, 0);
-    return_to_user_prog(int);
-}
-
-static inline int sys_video_get_state(uint32_t videoOut, videoState *state) {
-    lv2syscall3(108, (uint64_t)videoOut, 0, (uint64_t)(uintptr_t)state);
-    return_to_user_prog(int);
 }
 
 static inline void exit_thread(void) {
@@ -99,6 +44,12 @@ static inline void exit_thread(void) {
 static int flag_exists(const char *path) {
     sysFSStat st;
     return sysLv2FsStat(path, &st) == 0;
+}
+static unsigned read_target(void) {
+    int fd=-1;char data[3]={0};uint64_t rd=0;
+    if(sysLv2FsOpen(TARGET_PATH,SYS_O_RDONLY,&fd,0,NULL,0))return RES_480I;
+    int rc=sysLv2FsRead(fd,data,sizeof(data),&rd);sysLv2FsClose(fd);
+    return rc?RES_480I:enforcer_target(data,(unsigned)rd);
 }
 
 static int log_fd=-1;
@@ -140,38 +91,54 @@ static sys_ppu_thread_t thread_id;
 static void corrector(void *arg) {
     (void)arg;
     log_open();
-    log_line("start", 0);
+    log_line("start_native_v5", 0);
+    int bound=vsh_video_bind();
+    log_line("native_bind",(uint32_t)bound);
+    if(bound){atomic_store(&running,0);sysLv2FsClose(log_fd);log_fd=-1;exit_thread();}
+
     /* Liveness breadcrumb: "start" only proves the thread began. If the next
      * line is missing, the thread never got scheduled again (or the log fd
      * broke after the first write). "alive" proves the worker survived the
      * start-up settle and reached the poll loop. */
     for (unsigned i = 0; i < 6u && atomic_load(&running); i++) nap_ms(500);
     log_line("alive", 0);
+    int ready=-1;
+    if(sysLv2FsOpen(READY_PATH,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&ready,0666,NULL,0)==0)sysLv2FsClose(ready);
+
     unsigned stable = 0, attempts = 0;
     uint64_t idle_until = 0;
     int seen_armed = -1, seen_app = -1;
+    unsigned target=RES_480I;
+    uint32_t last_state=UINT32_MAX;int last_error=0;
     while (atomic_load(&running)) {
         nap_ms(500);
         int armed = flag_exists(ENFORCER_FLAG);
-        if (armed != seen_armed) { seen_armed = armed; log_line(armed ? "armed" : "disarmed", 0); }
+        if (armed != seen_armed) { seen_armed = armed; target=read_target(); stable=attempts=0; log_line(armed ? "armed" : "disarmed", target); }
         if (!armed) { stable = 0; attempts = 0; continue; }
         int app = flag_exists(APP_ACTIVE_FLAG);
-        if (app != seen_app) { seen_app = app; log_line(app ? "app_active" : "app_gone", 0); }
+        if (app != seen_app) { seen_app = app; target=read_target(); stable=attempts=0; log_line(app ? "app_active" : "app_gone", target); }
         if (app) { stable = 0; continue; }
-        videoState st;
-        uint8_t *z = (uint8_t *)&st;
-        for (unsigned i = 0; i < sizeof(st); i++) z[i] = 0;
-        if (sys_video_get_state(0, &st) != 0 || st.state != 0) { stable = 0; continue; }
-        uint32_t res = st.displayMode.resolution;
-        uint32_t scan = st.displayMode.scanMode;
-        uint32_t asp = st.displayMode.aspect;
+        vsh_video_state st;
+        int query=vsh_video_query(&st);
+        if(query){
+            if(query!=last_error)log_line("native_query_error",(uint32_t)query);
+            last_error=query;stable=0;continue;
+        }
+        last_error=0;
+        if(st.state!=0){stable=0;continue;}
+        uint32_t res=st.raw[8];
+        /* Native xsetting scan values: 1=interlace, 2=progressive.
+         * The public app API uses 0/1; do not mix these namespaces. */
+        uint32_t scan=st.raw[9]==1?SCAN_INTERLACE:1u;
+        uint32_t asp=st.raw[11];
         /* code packs the readback: res<<16 | scan<<8 | aspect */
         uint32_t code = (res << 16) | (scan << 8) | asp;
-        if (res == RES_480I) {
+        if(code!=last_state){last_state=code;log_line("native_state",code);}
+        if (res == target) {
             if (stable) log_line("target", code);
             stable = 0; attempts = 0; continue;
         }
-        if (res != RES_576I || scan != SCAN_INTERLACE) { stable = 0; continue; }
+        if (!enforcer_should_correct(target,res,scan)) { stable = 0; continue; }
         stable++;
         if (stable < DEBOUNCE_TICKS) continue;
         uint64_t now = sys_time_get_system_time();
@@ -185,17 +152,12 @@ static void corrector(void *arg) {
         attempts++;
         stable = DEBOUNCE_TICKS - 2u; /* require two fresh ticks before a retry */
         log_line("correct", code);
-        videoConfiguration cfg;
-        uint8_t *c = (uint8_t *)&cfg;
-        for (unsigned i = 0; i < sizeof(cfg); i++) c[i] = 0;
-        cfg.resolution = (uint8_t)RES_480I;
-        cfg.format = 0; /* VIDEO_BUFFER_FORMAT_XRGB */
-        cfg.aspect = (uint8_t)(asp == ASPECT_16_9 ? ASPECT_16_9 : ASPECT_4_3);
-        cfg.pitch = PITCH_720_XRGB;
-        int rc = sys_video_configure(0, &cfg);
+        int rc=vsh_video_configure(target,asp);
         log_line(rc ? "correct_fail" : "correct_sent", (uint32_t)rc);
     }
     log_line("stop", 0);
+    (void)sysLv2FsUnlink(READY_PATH);
+    if(log_fd>=0){sysLv2FsClose(log_fd);log_fd=-1;}
     exit_thread();
 }
 
@@ -203,6 +165,7 @@ int module_start(size_t args, void *argp) {
     (void)args;
     (void)argp;
     if (!atomic_exchange(&started, 1)) {
+        (void)sysLv2FsUnlink(READY_PATH);
         atomic_store(&running, 1);
         if (sysThreadCreate(&thread_id, corrector, NULL, 1100, 65536, THREAD_JOINABLE, "vsh_240p")) {
             atomic_store(&running, 0);

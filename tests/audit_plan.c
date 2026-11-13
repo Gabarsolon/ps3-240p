@@ -25,6 +25,8 @@ static uint64_t read_word(void *u,uint64_t a)
  if(a==0x122028)return UINT64_C(0xc0000000)<<32;
  if(a==0x122030)return 0x121028;
  if(a==0x122038)return UINT64_C(16)<<56;
+ if(a==0x110af68)return UINT64_C(0x80038ad8);
+ if(a==0x110af70)return UINT64_C(0x80038b10);
  return 0;
 }
 static void no_write(void *u,uint64_t a,uint64_t v){(void)u;(void)a;(void)v;}

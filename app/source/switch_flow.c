@@ -14,6 +14,7 @@ int switch_tests_available(void)
 static int select_modes(switch_flow *f,unsigned target,unsigned current,int analog)
 {
  if(f->pending)return fail(f,"Finish the current picture test first");
+ if(target!=4&&target!=5)return fail(f,"Invalid SD target");
  if(!analog)return fail(f,"Select AV Multi Out in XMB display settings first");
  if(current!=4&&current!=5)return fail(f,"Start from 480i or 576i for this SD experiment");
  f->original=current;f->target=target;f->alternate=target==5?4:5;
@@ -35,13 +36,15 @@ int switch_revert(switch_flow *f)
  f->pending=0;return 0;
 }
 int switch_begin(switch_flow *f,int family,unsigned current,int analog)
+{return switch_begin_target(f,family,family==MODE_288P_PAL?5:4,current,analog);}
+int switch_begin_target(switch_flow *f,int family,unsigned target,unsigned current,int analog)
 {
  if(!switch_tests_available())return fail(f,"Timing tests disabled after signal loss and console freeze. Reboot restores stock RAM.");
  f->error[0]=0;
  f->patch->error[0]=0;
  if(family<0||family>2)return fail(f,"Invalid timing family");
- unsigned target_mode = (family==1)?5:4;
- if(select_modes(f,target_mode,current,analog))return -1;
+ if((family==MODE_240P_NTSC&&target!=4)||(family==MODE_288P_PAL&&target!=5))return fail(f,"Timing family does not match SD target");
+ if(select_modes(f,target,current,analog))return -1;
  if(patch_snapshot(f->patch))return fail(f,f->patch->error);
  f->pending=1;
  /* Leave the candidate's profile before patching it; returning to it must
@@ -56,13 +59,19 @@ int switch_begin(switch_flow *f,int family,unsigned current,int analog)
 }
 void switch_keep(switch_flow *f){f->pending=0;}
 int switch_stock(switch_flow *f,unsigned current,int analog)
+{int rc=switch_stock_begin(f,current,current,analog);if(!rc)switch_keep(f);return rc;}
+int switch_stock_begin(switch_flow *f,unsigned target,unsigned current,int analog)
 {
  if(!switch_tests_available())return fail(f,"Display transitions disabled. Reboot the console to restore stock timing.");
  f->error[0]=0;
  f->patch->error[0]=0;
- if(select_modes(f,current,current,analog))return -1;
- if(patch_restore(f->patch))return fail(f,f->patch->error);
- if(f->configure(f->user,f->alternate)||f->configure(f->user,current))
-  return fail(f,"Stock RAM restored; display request failed. See log");
+ if(select_modes(f,target,current,analog))return -1;
+ if(patch_snapshot(f->patch))return fail(f,f->patch->error);
+ f->pending=1;
+ if(patch_restore(f->patch)||f->configure(f->user,f->alternate)||f->configure(f->user,target)){
+  char cause[200];snprintf(cause,sizeof(cause),"%s",f->patch->error[0]?f->patch->error:"Stock display request failed");
+  if(switch_revert(f))return -1;
+  return fail(f,cause);
+ }
  return 0;
 }

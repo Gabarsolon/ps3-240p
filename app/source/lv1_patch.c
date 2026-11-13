@@ -122,16 +122,30 @@ int patch_resolve(patch_context *c)
   if(c->log)c->log("%s word %016llx -> %016llx",code[k].name,
    (unsigned long long)live,(unsigned long long)c->candidate[index-1]);
  }
+ /* Analog head 1 / PAL profile 4 uses a distinct 574-line special record,
+  * not the ordinary profile table. Verify both pointer identities before
+  * including its ten data words in the same transaction/rollback. */
+ uint64_t ptr_raster,ptr_meta;
+ if(translate(pages,count,0xc000af68u,&ptr_raster)||
+    translate(pages,count,0xc000af70u,&ptr_meta)||
+    read64(c,ptr_raster)!=UINT64_C(0x80038ad8)||
+    read64(c,ptr_meta)!=UINT64_C(0x80038b10))
+  return fail(c,"PAL special timing pointer identity mismatch");
+ for(int j=0;j<10;j++,index++){
+  uint32_t va=j<3?0x80038b10u+j*8u:0x80038ad8u+(j-3)*8u;
+  if(translate(pages,count,va,&c->address[index]))return fail(c,"PAL special timing page unavailable");
+  c->stock[index]=j<3?g_stock_pal_special_metadata[j]:g_stock_pal_special_raster[j-3];
+  c->candidate[index]=j<3?g_patch_288p_metadata[j]:g_patch_288p_raster[j-3];
+  c->family[index]=MODE_288P_PAL;
+ }
  for(int i=0;i<PATCH_WORDS;i++)for(int j=0;j<i;j++)if(c->address[i]==c->address[j])
   return fail(c,"Aliased timing targets");
  c->ready=1;
  if(patch_state(c,0)==STATE_UNKNOWN||patch_state(c,1)==STATE_UNKNOWN){
   c->ready=0;return fail(c,"Timing bytes differ from verified 4.93 data; reboot first");
  }
- /* Profiles 1..4 are the metadata actually copied by the mode-setting
-  * path (private sysmgr 0x800005e4). Globals 0xc000af48/0xc000af70 hold
-  * pointers, not two arrays of runtime per-head descriptors. Capture
-  * the already verified profile records instead of walking those globals. */
+ /* Ordinary metadata profiles; PAL head 1 can instead use the special
+  * record verified above. These globals hold pointers, not descriptors. */
  for(int p=0;p<METADATA_PROBE_PROFILES;p++)for(int w=0;w<3;w++)
   c->metadata_probe[p][w]=read64(c,c->address[p*10+w]);
  /* Read-only AV-service cache, independently mapped at each word. These
@@ -197,10 +211,13 @@ int patch_read_cached_video(patch_context *c,patch_cached_video *out)
  snprintf(out->error,sizeof(out->error),"AV cache changed during read; snapshot refused");return -1;
 }
 int patch_candidate_in_cache(const patch_context *c,const patch_cached_video *video,int family)
+{return patch_candidate_on_head(c,video,family,0)||patch_candidate_on_head(c,video,family,1);}
+int patch_candidate_on_head(const patch_context *c,const patch_cached_video *video,int family,int head)
 {
- if(!c||!video||!c->ready||video->error[0]||family<0||family>1)return 0;
+ if(!c||!video||!c->ready||video->error[0]||family<0||family>1||head<0||head>1)return 0;
  int first_profile=family?2:0;
- for(int head=0;head<2;head++)if(video->head[head].state==2){
+ if(video->head[head].state==2){
+  if(family==MODE_288P_PAL&&!memcmp(video->head[head].raster,c->candidate+PAL_SPECIAL_RASTER_INDEX,7*sizeof(uint64_t)))return 1;
   for(int p=first_profile;p<first_profile+2;p++)
    if(!memcmp(video->head[head].raster,c->candidate+p*10+3,7*sizeof(uint64_t)))return 1;
  }
