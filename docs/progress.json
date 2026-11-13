@@ -1,6 +1,6 @@
 {
   "updated": "2026-11-13",
-  "note": "v1.3.6 release checks complete: 240p/288p geometry, native background correction and repeated-enable reuse validated on the console; owner also confirms the requested PAL PS1/PS-menu/return-XMB flow. Live 480i/576i selection and saved defaults work without reboot. Final package retains the tested native helper and timing behavior with release branding/version metadata. Local menu preview uses the production C renderer. Host suites, 19 startup/menu/idle cases, compiled helper audit, 54 firmware targets and finalized package checks pass; electrical parity and broad compatibility remain open.",
+  "note": "v1.4.3 release checks complete: owner confirms native gamma works alongside 240p and 288p. Exact tested helper retained; rebuilt executable matches it. Release app includes calibration help and repeated-preference-save replacement. Gamma storage/IPC/recovery/native guards, timing/settings/lifecycle/UI suites, 21 app scenarios, helper ABI audit, 54 firmware targets and finalized package/member checks pass. Added sourced CRT brightness/contrast/gamma calibration guide, control-interaction research and HEN capability assessment. Source and six release assets prepared for GitHub publication.",
   "stages": [
     {
       "name": "Static analysis & claim verification (hypercalls, netemu, RSX attr 0x100)",

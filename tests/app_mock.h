@@ -24,7 +24,7 @@ extern CellGcmContextData mock_context;
 int mock_uart_permission(uint64_t,uint64_t,uint64_t);
 #define CELL_GCM_CURRENT (&mock_context)
 typedef struct {unsigned char status[7];} padInfo;
-typedef struct {int len,BTN_UP,BTN_DOWN,BTN_CROSS,BTN_CIRCLE;} padData;
+typedef struct {int len,BTN_UP,BTN_DOWN,BTN_CROSS,BTN_CIRCLE,BTN_LEFT,BTN_RIGHT;} padData;
 void *memalign(size_t,size_t);
 void *rsxMemalign(size_t,size_t);
 int usleep(unsigned);

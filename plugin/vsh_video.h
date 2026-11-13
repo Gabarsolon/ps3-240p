@@ -2,6 +2,9 @@
 #ifndef VSH_VIDEO_H
 #define VSH_VIDEO_H
 #include <stdint.h>
+/* Resolve an existing VSH export descriptor; zero on validation failure. */
+uint32_t vsh_video_export(const char *library,uint32_t nid);
+int vsh_video_copy(uint32_t address,void *out,unsigned length);
 typedef struct {
  uint8_t raw[16];
  uint32_t flags,mode,format,pitch;

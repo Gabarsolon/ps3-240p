@@ -1,9 +1,10 @@
-/* SPDX-License-Identifier: MIT. Native VSH SD corrector (v5).
+/* SPDX-License-Identifier: MIT. Native VSH SD corrector and gamma service (v6).
  * Only corrects the opposite SD family; HD stays untouched. Polling is
  * disarmed without the enable flag and paused while the app is active.
  * Video calls resolve genuine VSH interfaces by export NID (vsh_video.c).
  * The former raw syscalls 107/108 were condition-variable APIs, not video.
  * Start/stop exit their loader thread with syscall 41; the worker is joined.
+ * Gamma commands and their recovery timer run independently of timing flags.
  */
 #include <sys/prx_module.h>
 #include <sys/thread.h>
@@ -15,6 +16,9 @@
 #include <stdatomic.h>
 #include "../app/source/enforcer_mode.h"
 #include "vsh_video.h"
+#include "vsh_gamma.h"
+#include "gamma_service.h"
+#include "../app/source/gamma_protocol.h"
 
 #define ENFORCER_FLAG   "/dev_hdd0/tmp/240p_enforcer.on"
 #define APP_ACTIVE_FLAG "/dev_hdd0/tmp/240p_app.active"
@@ -87,14 +91,46 @@ static void log_line(const char *event, uint32_t code) {
 
 static atomic_int running, started;
 static sys_ppu_thread_t thread_id;
+static gamma_service gamma_session;
+static const gamma_service_ops gamma_ops={vsh_gamma_snapshot,vsh_gamma_apply,vsh_gamma_set};
+static void gamma_answer(unsigned sequence,unsigned status,unsigned value)
+{
+ gamma_reply reply={GAMMA_MAGIC,sequence,status,value};int fd=-1;uint64_t wrote=0;
+ if(!sysLv2FsOpen(GAMMA_REPLY,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&fd,0666,NULL,0)){
+  int rc=sysLv2FsWrite(fd,&reply,sizeof(reply),&wrote);
+  if(rc||wrote!=sizeof(reply))log_line("gamma_reply_failed",(uint32_t)rc);
+  (void)sysLv2FsClose(fd);
+ }
+}
+static int gamma_restore(void)
+{
+ int rc=gamma_service_restore(&gamma_session,&gamma_ops);
+ log_line("gamma_restore",(uint32_t)rc);return rc;
+}
+static void gamma_poll(void)
+{
+ int fd=-1;uint64_t got=0;gamma_request request={0};
+ if(!sysLv2FsOpen(GAMMA_REQUEST,SYS_O_RDONLY,&fd,0,NULL,0)){
+  int rc=sysLv2FsRead(fd,&request,sizeof(request),&got);sysLv2FsClose(fd);
+  if(rc||got!=sizeof(request))request.magic=0;
+ }
+ gamma_reply reply;
+ if(gamma_service_tick(&gamma_session,&gamma_ops,sys_time_get_system_time(),&request,&reply)){
+  log_line("gamma_status",reply.status);log_line("gamma_value",reply.value);
+  gamma_answer(reply.sequence,reply.status,reply.value);
+ }
+}
 
 static void corrector(void *arg) {
     (void)arg;
     log_open();
-    log_line("start_native_v5", 0);
+    log_line("start_native_v6_gamma", 0);
     int bound=vsh_video_bind();
     log_line("native_bind",(uint32_t)bound);
     if(bound){atomic_store(&running,0);sysLv2FsClose(log_fd);log_fd=-1;exit_thread();}
+    int gamma_bound=vsh_gamma_bind();log_line("gamma_bind",(uint32_t)gamma_bound);
+    (void)sysLv2FsUnlink(GAMMA_REQUEST);(void)sysLv2FsUnlink(GAMMA_REPLY);
+    (void)sysLv2FsUnlink(GAMMA_READY);
 
     /* Liveness breadcrumb: "start" only proves the thread began. If the next
      * line is missing, the thread never got scheduled again (or the log fd
@@ -104,6 +140,7 @@ static void corrector(void *arg) {
     log_line("alive", 0);
     int ready=-1;
     if(sysLv2FsOpen(READY_PATH,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&ready,0666,NULL,0)==0)sysLv2FsClose(ready);
+    if(!gamma_bound&&sysLv2FsOpen(GAMMA_READY,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&ready,0666,NULL,0)==0)sysLv2FsClose(ready);
 
     unsigned stable = 0, attempts = 0;
     uint64_t idle_until = 0;
@@ -112,6 +149,7 @@ static void corrector(void *arg) {
     uint32_t last_state=UINT32_MAX;int last_error=0;
     while (atomic_load(&running)) {
         nap_ms(500);
+        if(!gamma_bound)gamma_poll();
         int armed = flag_exists(ENFORCER_FLAG);
         if (armed != seen_armed) { seen_armed = armed; target=read_target(); stable=attempts=0; log_line(armed ? "armed" : "disarmed", target); }
         if (!armed) { stable = 0; attempts = 0; continue; }
@@ -156,21 +194,26 @@ static void corrector(void *arg) {
         log_line(rc ? "correct_fail" : "correct_sent", (uint32_t)rc);
     }
     log_line("stop", 0);
+    (void)gamma_restore();(void)sysLv2FsUnlink(GAMMA_READY);
     (void)sysLv2FsUnlink(READY_PATH);
     if(log_fd>=0){sysLv2FsClose(log_fd);log_fd=-1;}
     exit_thread();
 }
 
-int module_start(size_t args, void *argp) {
-    (void)args;
-    (void)argp;
+static void __attribute__((noinline)) start_worker(void) {
     if (!atomic_exchange(&started, 1)) {
         (void)sysLv2FsUnlink(READY_PATH);
+        (void)sysLv2FsUnlink(GAMMA_READY);
         atomic_store(&running, 1);
         if (sysThreadCreate(&thread_id, corrector, NULL, 1100, 65536, THREAD_JOINABLE, "vsh_240p")) {
             atomic_store(&running, 0);
         }
     }
+}
+int module_start(size_t args, void *argp) {
+    (void)args;
+    (void)argp;
+    start_worker();
     /* Cobra's loadprx waits for this thread to terminate. Returning normally
      * hangs the caller, so the loader thread must exit here (syscall 41).
      * Mirrors ps3buzz_vsh module_start exactly. */

@@ -18,7 +18,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 CONTENT_ID = "UP0001-PS240P001_00-PS3240PSWITCH001"
 TITLE = "CRT Toolset"
 APP_ID = "PS240P001"
-APP_VERSION = "01.36"
+APP_VERSION = "01.43"
 
 def sha256_file(path: Path) -> str:
     h = hashlib.sha256()

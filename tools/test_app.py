@@ -25,18 +25,24 @@ def main():
         ("patch", ["tests/test_patch.c", "app/source/lv1_patch.c", "app/source/switch_flow.c"]),
         ("raster", ["tests/test_raster.c", "tests/raster_sim.c"]),
         ("sd", ["tests/test_sd.c", "app/source/sd_default.c"]),
+        ("gamma", ["tests/test_gamma.c", "app/source/gamma.c", "app/source/ui_layout.c"]),
+        ("gamma-service", ["tests/test_gamma_service.c", "plugin/gamma_service.c"]),
+        ("gamma-ipc", ["tests/test_gamma_ipc.c", "app/source/gamma_ipc.c", "plugin/gamma_service.c"]),
         ("plugin-lifecycle", ["tests/test_plugin_lifecycle.c", "app/source/plugin_lifecycle.c"]),
         ("vsh-video", ["tests/test_vsh_video.c", "plugin/vsh_video.c"]),
+        ("vsh-gamma", ["tests/test_vsh_gamma.c", "plugin/vsh_gamma.c"]),
         ("ui", ["tests/test_ui.c", "app/source/ui_layout.c"]),
-        ("startup", ["tests/test_startup.c", "app/source/lv1_patch.c", "app/source/switch_flow.c", "app/source/ui_layout.c", "app/source/sd_default.c", "app/source/plugin_lifecycle.c"]),
+        ("startup", ["tests/test_startup.c", "app/source/lv1_patch.c", "app/source/switch_flow.c", "app/source/ui_layout.c", "app/source/sd_default.c", "app/source/plugin_lifecycle.c", "app/source/gamma.c", "app/source/gamma_ipc.c"]),
     ]:
         exe = out / (name + (".exe" if os.name == "nt" else ""))
         test_flags = flags + (["-DTIMING_OFFLINE_TEST=1"] if name == "patch" else [])
         if name == "vsh-video":
             test_flags += ["-DVSH_VIDEO_HOST_TEST=1"]
-        subprocess.run(test_flags + sources + ["-o", str(exe)], cwd=ROOT, check=True)
+        if name == "vsh-gamma":
+            test_flags += ["-DVSH_GAMMA_HOST_TEST=1"]
+        subprocess.run(test_flags + sources + ([] if os.name == "nt" else ["-lm"]) + ["-o", str(exe)], cwd=ROOT, check=True)
         if name == "startup":
-            for scenario in range(19):
+            for scenario in range(21):
                 subprocess.run([str(exe), str(scenario)], cwd=ROOT, check=True)
             continue
         command = [str(exe)]

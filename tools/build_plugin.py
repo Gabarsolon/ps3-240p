@@ -70,6 +70,8 @@ def main():
         "-Wl,--gc-sections",
         SOURCE,
         PLUGIN / "vsh_video.c",
+        PLUGIN / "vsh_gamma.c",
+        PLUGIN / "gamma_service.c",
         SDK / "ppu" / "lib" / "lv2-prx-crt.o",
         "-lio",
         "-o", ELF,

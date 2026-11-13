@@ -233,6 +233,38 @@ int ui_render_pattern(ui_canvas *c,int width,int height,int content_height)
  return 0;
 }
 
+int ui_render_gamma(const ui_layout *l,ui_canvas *c,ui_result *r,int value,int digit,const uint8_t ramp[256],int native_value)
+{
+ if(!l||!c||!c->pixels||!r||!ramp||l->columns<24||l->width>1920||l->height>1080)return -1;
+ memset(r,0,sizeof(*r));r->pages=1;
+ rect(c,0,0,l->width,l->height,0xff000000u);
+ line(l,c,r,l->left,l->top,l->title_scale,-1,"Gamma preview",0xfff4f6f8);
+ char text[80];snprintf(text,sizeof(text),"Gamma %d.%02d   editing: %s",value/100,value%100,digit==0?"1.00":digit==1?"0.10":"0.01");
+ int y=l->top+7*l->title_scale+l->gap;
+ line(l,c,r,l->left,y,l->scale,-1,text,0xffffe080u);y+=l->line;
+ if(native_value)snprintf(text,sizeof(text),"Native %d.%02d active / extra preview",native_value/100,native_value%100);
+ else snprintf(text,sizeof(text),"App preview only / 1.00 = neutral");
+ line(l,c,r,l->left,y,l->scale,-1,text,0xffb6d9edu);y+=l->line;
+ int area=(l->bottom-3*l->line-y)/3;
+ if(area<l->line+8)return -1;
+ for(int row=0;row<3;row++){
+  const char *label=row==0?(native_value?"Input / native correction":"Original"):
+   row==1?(native_value?"Additional correction":"Corrected"):
+   native_value?"Extra corrected shadows: 0 - 32":"Corrected shadows: 0 - 32";
+  line(l,c,r,l->left,y,l->scale,-1,label,0xffb6d9edu);y+=l->line;
+  int h=area-l->line-l->gap,w=l->right-l->left;
+  for(int x=0;x<w;x++){
+   int input=row==2?(x*17/w)*2:x*255/(w-1);
+   uint32_t v=row==0?(uint8_t)input:ramp[input];
+   rect(c,l->left+x,y,1,h,0xff000000u|v*0x010101u);
+  }
+  y+=h+l->gap;
+ }
+ block(l,c,r,"Left/Right: digit  Up/Down: value\nCross: keep value  Circle: cancel",l->bottom-2*l->line,2,l->columns,-1,0xffb6d9edu);
+ if(l->interlaced)ui_filter_interlaced(c,l->width,l->height);
+ return 0;
+}
+
 /* Symmetric [1 2 1]/4 in numeric XRGB, independent of PPU/host byte order.
  * Read original rows with one saved scanline; replicate top/bottom edges.
  * Only software memory is read/modified, never the RSX display buffers.

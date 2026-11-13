@@ -44,6 +44,8 @@ static uint32_t resolve(const char *library,uint32_t nid)
  }
  return 0;
 }
+uint32_t vsh_video_export(const char *library,uint32_t nid){return resolve(library,nid);}
+int vsh_video_copy(uint32_t address,void *out,unsigned length){return copy(address,out,length);}
 int vsh_video_bind(void)
 {
  pid=sysProcessGetPid();

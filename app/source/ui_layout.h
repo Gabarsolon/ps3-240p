@@ -25,4 +25,6 @@ void ui_filter_interlaced(ui_canvas *,int width,int height);
 int ui_render(const ui_layout *,const ui_view *,ui_canvas *,ui_result *);
 /* Geometry pattern: content_height rows of pattern, magenta below it. */
 int ui_render_pattern(ui_canvas *,int width,int height,int content_height);
+/* App-local correction preview. Text stays neutral; upper ramp is original. */
+int ui_render_gamma(const ui_layout *,ui_canvas *,ui_result *,int value,int digit,const uint8_t ramp[256],int native_value);
 #endif

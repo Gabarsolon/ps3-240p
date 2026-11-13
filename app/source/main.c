@@ -31,6 +31,9 @@
 #include "switch_flow.h"
 #include "sd_default.h"
 #include "plugin_lifecycle.h"
+#include "gamma.h"
+#include "gamma_protocol.h"
+#include "gamma_ipc.h"
 
 SYS_PROCESS_PARAM(1001,0x100000);
 #define HOST_SIZE (32u*1024*1024)
@@ -42,6 +45,11 @@ SYS_PROCESS_PARAM(1001,0x100000);
 #define ENFORCER_READY "/dev_hdd0/tmp/240p_enforcer.ready"
 #define META240_FLAG "/dev_hdd0/tmp/240p_meta240.on"
 #define SCALER_FLAG "/dev_hdd0/tmp/240p_scaler.on"
+#define GAMMA_PATH "/dev_hdd0/game/PS240P001/USRDIR/gamma.txt"
+#define GAMMA_DIR "/dev_hdd0/game/PS240P001/USRDIR/shaders"
+static int gamma_value=CRT_GAMMA_NEUTRAL,gamma_preview,gamma_digit;
+static unsigned gamma_system_value;
+static uint8_t gamma_ramp[256];
 static uint32_t *buffers[2],*software,offsets[2],pitch,label_value;
 static videoState state;
 static videoDeviceInfo device;
@@ -450,6 +458,10 @@ static int frame(const ui_view *view)
  int eff_h=active_raster_height();
  hash=(hash^(unsigned)eff_h)*UINT64_C(1099511628211);
  hash=(hash^(unsigned)pattern_mode)*UINT64_C(1099511628211);
+ hash=(hash^(unsigned)gamma_preview)*UINT64_C(1099511628211);
+ hash=(hash^(unsigned)gamma_value)*UINT64_C(1099511628211);
+ hash=(hash^(unsigned)gamma_digit)*UINT64_C(1099511628211);
+ hash=(hash^gamma_system_value)*UINT64_C(1099511628211);
  if(hash!=presented_hash){hash_frames=0;presented_hash=hash;}
  if(hash_frames>=2&&!os_active()&&now()>=redraw_until){usleep(16000);return 0;}
  if(drain())return -1;
@@ -458,7 +470,9 @@ static int frame(const ui_view *view)
  ui_layout_init(&layout,resolution.width,eff_h,state.displayMode.aspect==VIDEO_ASPECT_16_9,is_interlaced);
  for(unsigned i=0;i<(unsigned)resolution.width*resolution.height;i++)software[i]=UI_BACKGROUND;
  ui_canvas canvas={software,resolution.width,NULL,NULL};
- if(pattern_mode){
+ if(gamma_preview){
+  if(ui_render_gamma(&layout,&canvas,&drawn,gamma_value,gamma_digit,gamma_ramp,(int)gamma_system_value))return -1;
+ }else if(pattern_mode){
   /* Pattern fills the public buffer: the low-line content sits on top, the
    * magenta band marks the area a cropped 240-line raster would hide. */
   if(ui_render_pattern(&canvas,resolution.width,resolution.height,eff_h<64?64:eff_h))return -1;
@@ -478,7 +492,7 @@ static int frame(const ui_view *view)
  if(submitted_frames<=2)app_log("Frame %u flip submitted: buffer=%d",submitted_frames,front);
  pending=1;front^=1;usleep(10000);return 0;
 }
-enum {UP=1,DOWN=2,CROSS=4,CIRCLE=8};
+enum {UP=1,DOWN=2,CROSS=4,CIRCLE=8,LEFT=16,RIGHT=32};
 static unsigned input(void)
 {
  if(os_active())return 0;
@@ -488,7 +502,8 @@ static unsigned input(void)
   if(!info.status[i]){held[i]=0;continue;}
   padData pd={0};if(ioPadGetData(i,&pd)||pd.len<=0){any_held|=held[i]!=0;continue;}
   saw_data=1;
-  unsigned b=(pd.BTN_UP?UP:0)|(pd.BTN_DOWN?DOWN:0)|(pd.BTN_CROSS?CROSS:0)|(pd.BTN_CIRCLE?CIRCLE:0);
+  unsigned b=(pd.BTN_UP?UP:0)|(pd.BTN_DOWN?DOWN:0)|(pd.BTN_CROSS?CROSS:0)|(pd.BTN_CIRCLE?CIRCLE:0)|
+   (pd.BTN_LEFT?LEFT:0)|(pd.BTN_RIGHT?RIGHT:0);
   pressed|=b&~held[i];held[i]=b;any_held|=b!=0;
  }
  /* Circle used to dismiss the OS menu must not become an app quit. */
@@ -509,6 +524,168 @@ static void status(const char *title,const char *text)
 }
 static const char *memory_state(int s)
 {return s==STATE_STOCK?"stock":s==STATE_PATCHED?"candidate":s==STATE_MIXED?"partial":"unavailable";}
+
+static void gamma_edit(void)
+{
+ int original=gamma_value;gamma_preview=1;gamma_digit=1;
+ (void)crt_gamma_ramp(gamma_value,gamma_ramp);
+ ui_view view={0};view.title="Gamma preview";
+ while(!exiting){
+  if(frame(&view))break;unsigned key=input();
+  if(key&CIRCLE){gamma_value=original;break;}
+  if(key&CROSS)break;
+  if(key&LEFT)gamma_digit=(gamma_digit+2)%3;
+  if(key&RIGHT)gamma_digit=(gamma_digit+1)%3;
+  const int steps[]={100,10,1};
+  if(key&UP)gamma_value+=steps[gamma_digit];
+  if(key&DOWN)gamma_value-=steps[gamma_digit];
+  if(gamma_value<CRT_GAMMA_MIN)gamma_value=CRT_GAMMA_MIN;
+  if(gamma_value>CRT_GAMMA_MAX)gamma_value=CRT_GAMMA_MAX;
+  if(key&(UP|DOWN))(void)crt_gamma_ramp(gamma_value,gamma_ramp);
+ }
+ gamma_preview=0;
+ app_log("Gamma preview value=%d hundredths; app framebuffer only",gamma_value);
+}
+static int gamma_write(const char *path,const char *text)
+{
+ FILE *f=fopen(path,"wb");if(!f)return -1;
+ size_t n=strlen(text);int failed=fwrite(text,1,n,f)!=n;
+ if(fflush(f))failed=1;if(fclose(f))failed=1;
+ if(failed)return -1;
+ f=fopen(path,"rb");if(!f)return -1;
+ for(size_t i=0;i<n;i++)if(fgetc(f)!=(unsigned char)text[i]){fclose(f);return -1;}
+ failed=fgetc(f)!=EOF||ferror(f);if(fclose(f))failed=1;return failed?-1:0;
+}
+static void gamma_export(void)
+{
+ char shader[2048],path[256],preset[256],number[5],message[640];
+ crt_gamma_format(gamma_value,number);
+ if(crt_gamma_shader(gamma_value,shader,sizeof(shader))<0){status("Gamma export failed","Could not generate shader.");return;}
+ (void)sysLv2FsMkdir(GAMMA_DIR,0777);
+ snprintf(path,sizeof(path),GAMMA_DIR "/crt-gamma-%s.cg",number);
+ int rc=gamma_write(path,shader);
+ snprintf(preset,sizeof(preset),"shaders = \"1\"\nshader0 = \"crt-gamma-%s.cg\"\nfilter_linear0 = \"false\"\n",number);
+ snprintf(path,sizeof(path),GAMMA_DIR "/crt-gamma-%s.cgp",number);
+ if(!rc)rc=gamma_write(path,preset);
+ app_log("Gamma shader export value=%d rc=%d path=%s",gamma_value,rc,path);
+ if(rc){status("Gamma export failed","Could not write and verify both shader files. Existing RetroArch settings were not changed.");return;}
+ snprintf(message,sizeof(message),"Gamma %s shader written and read back.\n\nIn RetroArch: Quick Menu > Shaders. Enable shaders and load:\n%s\n\nSave a game/core preset if desired. This affects RetroArch content only. XMB, PS1_emu and other games are unchanged. RetroArch hardware validation pending.",number,path);
+ status("RetroArch gamma shader exported",message);
+}
+static int gamma_load_helper(void *u,unsigned slot)
+{
+ /* Called only for a fresh load. An old flag can survive reboot even though
+  * its timing patches cannot; loading gamma must not switch the SD family. */
+ clear_flag(ENFORCER_FLAG);return helper_load(u,slot);
+}
+static int gamma_helper(void)
+{
+ int source_size=0,runtime_size=0;
+ uint64_t source=file_digest("/dev_hdd0/game/PS240P001/USRDIR/vsh_240p.sprx",&source_size);
+ deploy_enforcer();
+ uint64_t runtime=file_digest("/dev_hdd0/plugins/vsh_240p.sprx",&runtime_size);
+ if(deploy_needed(source_size,source,runtime_size,runtime))return -1;
+ plugin_lifecycle ops=helper_ops();ops.load=gamma_load_helper;unsigned slot=0;int reused=0;
+ /* Capability is checked below. An old resident helper needs a reboot;
+  * gamma must not stop a working timing enforcer to replace it. */
+ if(helper_start(&ops,0,&slot,&reused)){app_log("Gamma helper: %s",ops.error);return -1;}
+ uint64_t deadline=now()+5000000;
+ ui_view view={0};view.title="Preparing native gamma";view.text="Waiting for the resident display helper...";
+ while(!flag_present(GAMMA_READY)&&now()<deadline&&!exiting){if(frame(&view))break;usleep(50000);}
+ return flag_present(GAMMA_READY)?0:-1;
+}
+static int gamma_exchange(unsigned action,unsigned value)
+{
+#ifndef APP_HOST_TEST
+ static uint32_t sequence;
+ if(!sequence)sequence=(uint32_t)now();if(!++sequence)sequence++;
+ gamma_request request={GAMMA_MAGIC,sequence,action,value};
+ int error=0,published=gamma_publish(GAMMA_REQUEST,&request,&error);
+ app_log("Gamma publish action=%u sequence=%u stage=%d errno=%d",action,sequence,published,error);
+ if(published)return -2;
+ uint64_t deadline=now()+3000000;
+ ui_view view={0};view.title="Native gamma";view.text="Waiting for the AV service...";
+ while(!exiting&&now()<deadline){
+  FILE *f=fopen(GAMMA_REPLY,"rb");
+  if(f){gamma_reply reply={0};size_t n=fread(&reply,1,sizeof(reply),f);fclose(f);
+   if(n==sizeof(reply)&&reply.magic==GAMMA_MAGIC&&reply.sequence==sequence){
+    gamma_system_value=reply.value>=50&&reply.value<=400?reply.value:0;
+    app_log("Gamma reply action=%u status=%u value=%u",action,reply.status,reply.value);
+    return reply.status==GAMMA_OK?0:reply.status==GAMMA_UNSUPPORTED?-3:
+     reply.status==GAMMA_EXPIRED?-5:-4;
+   }
+  }
+  if(frame(&view))break;usleep(50000);
+ }
+ app_log("Gamma acknowledgement timeout action=%u sequence=%u",action,sequence);return -6;
+#else
+ (void)action;(void)value;return -1;
+#endif
+}
+static void gamma_native_test(void)
+{
+ if(gamma_helper()){
+  status("Gamma helper unavailable","Reboot once after updating from an older build, then reopen CRT Toolset and try again. Native gamma currently requires the audited 4.93 CEX VSH layout. Existing timing enforcement has not been stopped.");return;
+ }
+ int result=gamma_exchange(GAMMA_TEST,(unsigned)gamma_value);
+ if(result){
+  (void)gamma_exchange(GAMMA_CANCEL,0);
+  const char *message=result==-2?"Could not publish the command to the helper. No new gamma test was started. See the app log for the filesystem error.":
+   result==-3?"The helper could not inspect a supported active output. Native gamma currently requires 720x480/576 analog RGB8. See the helper log.":
+   result==-5?"The recovery timer expired before the app received confirmation. The helper restored the previous curve. Start a new test and press Cross to keep it before the countdown ends. The timer continues while the PS menu is open.":
+   result==-6?"The helper did not acknowledge the command in time. Any test it received still has automatic recovery. See the app and helper logs.":
+   "The helper reported that the native AV call or readback failed. Automatic restoration remains armed if needed. See the helper log.";
+  status("Native gamma test stopped",message);return;
+ }
+ uint64_t deadline=now()+12000000;
+ while(!exiting&&now()<deadline){
+  char text[512],number[5];crt_gamma_format(gamma_value,number);
+  uint64_t t=now();unsigned remaining=t<deadline?(unsigned)((deadline-t+999999)/1000000):0;
+  snprintf(text,sizeof(text),"Native analog gamma %s\n\nCross: keep for this session\nCircle: restore previous curve\nAutomatic restore in %u seconds.\n\nCheck shadows and color. Global picture quality and game transitions need CRT validation. Do not combine with a gamma shader.",number,remaining);
+  ui_view v={0};v.title="Keep native gamma?";v.text=text;v.page=-1;
+  if(frame(&v))break;unsigned key=input();
+  if(key&CIRCLE)break;
+  if(key&CROSS){
+   if(!gamma_exchange(GAMMA_KEEP,(unsigned)gamma_value)){
+    status("Native gamma kept","The AV service accepted the curve. It remains active after exiting this app until restored, changed by another app, or rebooted. This experimental build does not force it back after game video changes. Choose Restore system gamma to undo it.");return;
+   }
+   break;
+  }
+ }
+ int rc=gamma_exchange(GAMMA_CANCEL,0);
+ if(!exiting)status(rc?"Gamma restore not confirmed":"Previous gamma restored",rc?"The helper's recovery timer will retry. See the helper log.":"The saved three-channel curve was restored through the native AV service.");
+}
+static void gamma_menu(void)
+{
+ int selected=0;
+#ifndef APP_HOST_TEST
+ gamma_system_value=0;
+ if(flag_present(GAMMA_READY)){
+  FILE *f=fopen(GAMMA_REPLY,"rb");if(f){gamma_reply reply={0};size_t n=fread(&reply,1,sizeof(reply),f);fclose(f);
+   if(n==sizeof(reply)&&reply.magic==GAMMA_MAGIC&&reply.value>=50&&reply.value<=400)gamma_system_value=reply.value;
+  }
+ }
+#endif
+ while(!exiting){
+  char label[80],number[5];crt_gamma_format(gamma_value,number);
+  snprintf(label,sizeof(label),"Enter gamma value: %s",number);
+  const char *options[]={label,"Test system gamma (15-second recovery)","Restore system gamma","Reset value to 1.00 (neutral)","Save gamma preference","Export RetroArch Cg shader","About gamma / calibration","Back"};
+  const int count=(int)(sizeof(options)/sizeof(options[0]));
+  ui_view v={0};v.title="Gamma / analog RGB experiment";v.items=options;v.count=count;v.selected=selected;v.page=-1;
+  if(frame(&v))break;unsigned key=input();if(key&CIRCLE)break;
+  if(key&UP)selected=(selected+count-1)%count;if(key&DOWN)selected=(selected+1)%count;
+  if(key&CROSS){
+   if(selected==0)gamma_edit();
+   else if(selected==1)gamma_native_test();
+   else if(selected==2){int rc=gamma_helper()||gamma_exchange(GAMMA_RESTORE,0);status(rc?"Gamma restore not confirmed":"System gamma restored",rc?"Reboot to load the new helper if an old one remains resident. See the helper log.":"The curve saved before the native test has been restored.");}
+   else if(selected==3){gamma_value=100;}
+   else if(selected==4){int rc=crt_gamma_save(GAMMA_PATH,gamma_value);app_log("Save gamma preference value=%d rc=%d",gamma_value,rc);status(rc?"Gamma save failed":"Gamma preference saved",rc?"The setting could not be saved and verified.":"Saved for CRT Toolset's next start. Saving does not apply a curve or enable gamma at boot. Choose Test system gamma to apply it.");}
+   else if(selected==5)gamma_export();
+   else if(selected==6)status("Gamma / CRT calibration","1.00 is neutral. Higher values brighten shadows and midtones.\n\nCalibrate the TV first:\n1. Set normal Contrast/Picture.\n2. Adjust Brightness so black is dark, keeping near-black detail visible. A black screen alone is not enough.\n3. Adjust gamma using the ramps and normal pictures, then test and keep it.\n\nAfter changing TV contrast or brightness, recheck black level, then gamma. The controls can interact.\n\nCRT Brightness sets black level. Contrast sets picture gain/white output; a CRT has no backlight.\n\nThe editor preview does not apply native gamma. Test system gamma applies it with timed recovery. Saving remembers only the value.\n\nUse supported CFW and analog RGB8 SD output. Games may reset the curve. RetroArch export is a separate alternative; avoid applying both.\n\nGamma cannot recover source values clipped to zero or repair TV hardware.");
+   else break;
+  }
+ }
+}
 static void diagnostics(void)
 {
  char text[1000];
@@ -518,7 +695,7 @@ static void diagnostics(void)
  else snprintf(cache,sizeof(cache),"AV cached raster (not a measurement):\nHead 0: %u active / %u total, state=%u\nHead 1: %u active / %u total, state=%u",
   cached_video.head[0].active_lines,cached_video.head[0].total_lines,cached_video.head[0].state,
   cached_video.head[1].active_lines,cached_video.head[1].total_lines,cached_video.head[1].state);
- snprintf(text,sizeof(text),"CRT Toolset 1.3.6 / diagnostics\nReported output: %ux%u %s\nPort: 0x%02x (RGB/SCART supported)\nNTSC tables: %s\nPAL tables: %s\nLV1 access: %s\nAV UART permission: %s (no command sent)\nLog: %s\n\n%s\n\n%s\n\nTiming tests enabled with 15-second automatic recovery safeguard.",
+ snprintf(text,sizeof(text),"CRT Toolset 1.4.3 / diagnostics\nReported output: %ux%u %s\nPort: 0x%02x (RGB/SCART supported)\nNTSC tables: %s\nPAL tables: %s\nLV1 access: %s\nAV UART permission: %s (no command sent)\nLog: %s\n\n%s\n\n%s\n\nTiming tests enabled with 15-second automatic recovery safeguard.",
   resolution.width,resolution.height,state.displayMode.scanMode==VIDEO_SCANMODE_INTERLACE?"interlaced":"progressive",
   device.portType,memory_state(patch_state(&patch,0)),memory_state(patch_state(&patch,1)),
   backend==1?"PS3MAPI":backend==2?"CFW 8/9":"not verified",
@@ -637,7 +814,7 @@ int main(void)
  (void)sysLv2FsMkdir("/dev_hdd0/tmp",0777);
  if(sysLv2FsOpen(LOG_PATH,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&log_fd,0666,NULL,0))log_fd=-1;
  write_flag(APP_ACTIVE_FLAG);
- app_log("CRT Toolset build 1.3.6; native enabled=%u preparing=%u; timing tests ENABLED",CELL_VIDEO_OUT_OUTPUT_STATE_ENABLED,CELL_VIDEO_OUT_OUTPUT_STATE_PREPARING);
+ app_log("CRT Toolset build 1.4.3; native enabled=%u preparing=%u; timing tests ENABLED",CELL_VIDEO_OUT_OUTPUT_STATE_ENABLED,CELL_VIDEO_OUT_OUTPUT_STATE_PREPARING);
  void *host=memalign(1024*1024,HOST_SIZE);
  if(!host){app_log("Startup failed: host allocation");return 1;}
  int rc=cellSysutilRegisterCallback(0,event,NULL);if(rc){app_log("Startup callback rc=%08x",(unsigned)rc);return 1;}
@@ -654,6 +831,8 @@ int main(void)
  if(configure(NULL,initial)){app_log("Startup stopped at video configure");return 1;}
  rc=ioPadInit(7);if(rc){app_log("Startup controller init rc=%08x",(unsigned)rc);return 1;}
  flow.patch=&patch;flow.available=available;flow.configure=configure;
+ if(crt_gamma_load(GAMMA_PATH,&gamma_value))gamma_value=CRT_GAMMA_NEUTRAL;
+ app_log("Gamma preference=%d hundredths; not automatically applied",gamma_value);
  /* Present the menu before any LV1 operation. Inspection is explicit via
   * Recheck timing memory, or occurs when starting a timing test. */
  app_log("UI ready; LV1 inspection deferred until selected");
@@ -666,6 +845,7 @@ int main(void)
   "Stock 576i 50Hz + save boot default",
   "Output / diagnostics",
   "Geometry pattern (measure crop)",
+  "Gamma / shadow correction",
   "Recheck timing memory",
   "Exit to XMB"
  };
@@ -674,7 +854,7 @@ int main(void)
  uint64_t next_memory_poll=0;
  while(!exiting){
   if(!os_active()&&now()>=next_memory_poll){cached_ntsc=patch_state(&patch,0);cached_pal=patch_state(&patch,1);next_memory_poll=now()+1000000;}
-  char title[200];snprintf(title,sizeof(title),"CRT Toolset / v1.3.6\nPAL: %s  NTSC: %s",memory_state(cached_pal),memory_state(cached_ntsc));
+  char title[200];snprintf(title,sizeof(title),"CRT Toolset / v1.4.3\nPAL: %s  NTSC: %s",memory_state(cached_pal),memory_state(cached_ntsc));
   ui_view view={0};view.title=title;view.items=items;view.count=item_count;view.selected=selected;view.page=-1;
   if(frame(&view)){app_log("Frame loop stopped: exit_request=%d gpu_ok=%d",exiting,gpu_ok);if(!exiting)outcome=1;break;}
   /* Complete the first pair before accepting a choice, including quit. */
@@ -696,7 +876,8 @@ int main(void)
    else if(selected==5)stock_mode(5);
    else if(selected==6)diagnostics();
    else if(selected==7){pattern_mode=1;app_log("Geometry pattern shown; content=%u lines",(unsigned)active_raster_height());}
-   else if(selected==8){int rc=inspect();status(rc?"Memory unavailable":"Memory checked",rc?patch.error:"All target records are recognized. No memory writes performed.");}
+   else if(selected==8)gamma_menu();
+   else if(selected==9){int rc=inspect();status(rc?"Memory unavailable":"Memory checked",rc?patch.error:"All target records are recognized. No memory writes performed.");}
    else break;
    next_memory_poll=0;
   }

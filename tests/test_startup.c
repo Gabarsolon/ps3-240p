@@ -119,7 +119,17 @@ int ioPadGetInfo(padInfo *p){memset(p,0,sizeof(*p));p->status[0]=1;return 0;}
 int ioPadGetData(int port,padData *p)
 {
  assert(port==0&&flip_mask==3&&completed_frames>=2&&!os_active());memset(p,0,sizeof(*p));p->len=1;
- if(scenario==15||scenario==16){
+ if(scenario==19||scenario==20){
+  unsigned key=0;
+  if(pad_calls<16){if(!(pad_calls&1))key=DOWN;}
+  else {
+   const unsigned script[]={CROSS,0,CROSS,0,UP,0,RIGHT,0,UP,0,0,0,CIRCLE,0,CIRCLE};
+   unsigned step=pad_calls-16;assert(step<sizeof(script)/sizeof(script[0]));key=script[step];
+   if(step==10)key=scenario==19?CROSS:CIRCLE;
+  }
+  p->BTN_DOWN=!!(key&DOWN);p->BTN_CROSS=!!(key&CROSS);p->BTN_UP=!!(key&UP);
+  p->BTN_RIGHT=!!(key&RIGHT);p->BTN_CIRCLE=!!(key&CIRCLE);pad_calls++;
+ }else if(scenario==15||scenario==16){
   if(pad_calls==0||pad_calls==2)p->BTN_UP=1;
   else if(pad_calls==4)p->BTN_CROSS=1;
   else if(pad_calls==5||pad_calls==7)p->BTN_CIRCLE=1;
@@ -158,7 +168,11 @@ int main(int argc,char **argv)
  assert(switch_stock(&production,5,1)==-1&&configures==0&&state_reads==0);
  assert(strstr(production.error,"disabled"));
  int rc=ps3_app_main();
- if(scenario==18){
+ if(scenario==19||scenario==20){
+  assert(rc==0&&exit_code==0&&configures==1&&pad_calls==31&&!uart_probes);
+  assert(gamma_value==(scenario==19?111:100)&&!gamma_preview);
+  assert(strstr(log_capture,"Gamma preview value="));
+ }else if(scenario==18){
   assert(rc==0&&exit_code==0&&quit_sent&&late_overlay_write&&repainted);
   assert(overlay_closed&&flips>8&&configures==1);
  }else if(scenario==17){

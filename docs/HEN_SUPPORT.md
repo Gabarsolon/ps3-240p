@@ -34,3 +34,86 @@ the public video API; it does not inherently require an LV1 timing patch.
 the current menu still requires the CFW timing-record preflight, and saving
 defaults also requires webMAN's named-key support. These stock modes should
 not be advertised as tested HEN features.
+
+## Reassessment after native gamma (2026-11-13)
+
+**PROVEN (upstream identity):** Rechecking GitHub's current default branch
+still resolves to `6c529455261db97a0f9028fe96db522a97fd5ccc`, the commit inspected
+above. The README's newer changelog language about LV1 peek/poke must be read
+with the implementation's hardware-exploit prerequisite. This review is of
+that source revision, not a claim that every distributed HEN build matches it.
+
+| Feature | Ordinary HEN assessment | Current implementation |
+|---|---|---|
+| Native 240p / 288p timing | **INFERRED: blocked with the present backend** | Requires live LV1 timing/encoder writes; no verified substitute found |
+| Background SD correction | **INFERRED: its plugin mechanism is portable** | Native VSH calls do not themselves create low-line timing; it still needs the timing patch |
+| Stock 480i / 576i live selection | **INFERRED: a practical port candidate** | Public API exists, but the current combined action first snapshots/restores LV1 timing RAM |
+| Saved 480i / 576i default | **INFERRED: a practical port candidate** | Uses named XRegistry access through a suitable webMAN build; needs HEN verification |
+| Native analog gamma | **INFERRED: a realistic separate port candidate** | Setter is a VSH AV call, but current guards/snapshot/readback still read LV1 |
+| Value editor / calibration ramps / shader export | **PROVEN: app-local implementation has no LV1 dependency** | **UNKNOWN:** actual package and shader execution on HEN |
+
+### What ordinary HEN does provide
+
+**PROVEN (upstream source):** Its syscall-8 dispatcher implements process
+memory reads (`PS3MAPI_OPCODE_GET_PROC_MEM`, 0x31), VSH plugin inspection
+(0x47), and Cobra-style VSH plugin load/unload. The loader calls the VSH
+process's normal PRX loading/start machinery. Those are the facilities our
+native display helper uses to find and invoke VSH interfaces; VSH plugins
+are not inherently CFW-only.
+
+Sources at the pinned HEN revision:
+[dispatcher](https://github.com/PS3Xploit/PS3HEN/blob/6c529455261db97a0f9028fe96db522a97fd5ccc/payload/main.c),
+[process-memory reader](https://github.com/PS3Xploit/PS3HEN/blob/6c529455261db97a0f9028fe96db522a97fd5ccc/payload/ps3mapi_core.c),
+[VSH plugin loader](https://github.com/PS3Xploit/PS3HEN/blob/6c529455261db97a0f9028fe96db522a97fd5ccc/payload/modulespatch.c),
+[opcode definitions](https://github.com/PS3Xploit/PS3HEN/blob/6c529455261db97a0f9028fe96db522a97fd5ccc/payload/ps3mapi_core.h).
+
+**PROVEN (project code):** `plugin/vsh_video.c` uses process-memory reads
+and native xsetting/PAF/VSH calls, not LV1 pokes. The low-line timing change
+is separately performed by `app/source/lv1_patch.c`. Porting the helper
+alone therefore does not make a stock 480i/576i raster progressive.
+
+### Gamma changes the porting opportunity
+
+**PROVEN (project code and private firmware trace):** The actual gamma setter
+in `plugin/vsh_gamma.c` calls the VSH AV LUT routine. It writes no LV1 memory
+and no MMIO directly. However, `read_exponents` uses PS3MAPI LV1 peek to
+validate the active analog format, save the prior RGB curve and check the
+result. That is why the present gamma implementation still cannot be called
+ordinary-HEN compatible. See [the native gamma evidence](GAMMA.md).
+
+**INFERRED port plan:** Keep the setter and timed service, but establish a
+verified native way to obtain the active output and previous three-channel
+curve, and validate the setter's result, without those LV1 reads. Check the
+HFW VSH signature/export binding and package/plugin loading on a real HEN
+console. Native public gamma APIs must not be assumed to return the same
+global curve modified by the private AV path without verifying that behavior.
+Simply dropping the snapshot/readback checks would weaken restoration and
+would not establish compatibility.
+
+**INFERRED stock-mode port plan:** Split 480i/576i selection and saved-default
+handling from the CFW timing restore/preflight. Detect capabilities before
+entering an LV1-dependent path. Preserve explicit confirmation and the saved
+setting readback/rollback behavior. **UNKNOWN:** results until tested on HEN.
+
+### The hardware-assisted exception
+
+**CLAIMED (exploit authors):**
+[BadHTAB](https://github.com/aomsin2526/BadHTAB) combines software with an
+RP2040/RAM-signal hardware glitch and requires soldering; its author marks it
+obsolete in favor of BadWDSD. It is not a software-only HEN update.
+[BadWDSD](https://github.com/aomsin2526/BadWDSD) is a modchip project that
+can boot qCFW on supported later consoles. Its qCFW path is a different
+environment from ordinary software-only HEN.
+
+**INFERRED:** A hardware-assisted HEN environment with working LV1 read/write,
+or qCFW with suitable Cobra support, could meet the fundamental timing-access
+requirement. **UNKNOWN:** our 4.93 record identities, mappings, model/encoder
+behavior, helper loading and recovery on those systems. This is a possible
+validation target, not tested support or a recommendation to modify hardware.
+
+**Current conclusion:** The earlier ordinary-HEN limitation still applies to
+240p/288p with this backend. A partial HEN edition offering gamma, calibration
+and stock SD selection is now a more credible development target. No console
+was contacted and no HEN exploit, firmware installation or device modification
+was performed for this review. Downloaded source snapshots are in ignored
+`local_only/sources/hen-review/`.
