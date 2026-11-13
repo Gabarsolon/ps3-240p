@@ -26,7 +26,7 @@ CRT setup. [Release notes](docs/RELEASE_v1.4.3.md) and
 | Native PS3 homebrew application (EBOOT.BIN / PS3-240P.pkg) | 10% | `████████░░` 80.0% |
 | Hardware waveform verification (line count, sync, 15.7 kHz) | 5% | `░░░░░░░░░░` 0% |
 
-_Last update: 2026-11-13. v1.4.3 release checks complete: owner confirms native gamma works alongside 240p and 288p. Exact tested helper retained; rebuilt executable matches it. Release app includes calibration help and repeated-preference-save replacement. Gamma storage/IPC/recovery/native guards, timing/settings/lifecycle/UI suites, 21 app scenarios, helper ABI audit, 54 firmware targets and finalized package/member checks pass. Added sourced CRT brightness/contrast/gamma calibration guide, control-interaction research and HEN capability assessment. Source and six release assets prepared for GitHub publication._
+_Last update: 2026-11-13. v1.4.3 published with native gamma and calibration guidance. New offline 540p60 investigation identifies OSSC Pro timing precedent, 4.93 1080i profile/clock/encoder paths, integer-line refresh choices and a component-HD-CRT validation plan. Added reproducible timing calculator; PS3 540p output remains unimplemented and unverified. No console access or output changes during this research._
 <!-- progress:end -->
 
 The progress block is generated from `docs/progress.json`; percentages estimate work, not electrical verification.
@@ -156,6 +156,7 @@ The app builder packages the tracked `plugin/vsh_240p.sprx`. Rebuilding the help
 
 ## Research and history
 
+- [540p60 for HD CRTs: source evidence, PS3 timing profiles and remaining work](docs/HD_CRT_540P.md). **UNKNOWN:** working PS3 output; research only, not an app feature.
 - [Current geometry evidence and test results](docs/GEOMETRY_STATUS_2026-11-13.md).
 - [Earlier app review and failed experiments](docs/APP_REVIEW_2026-11-11.md).
 - [Verified research](docs/RESEARCH.md), [AV-manager trace](docs/LV1_AV_TRACE.md), [PS1/PS2 video paths](docs/BC_PS1_EMULATOR_VIDEO.md), and [live page resolution](docs/LV1_SYSMGR_SS_LOADADDR.md).

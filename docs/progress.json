@@ -1,6 +1,6 @@
 {
   "updated": "2026-11-13",
-  "note": "v1.4.3 release checks complete: owner confirms native gamma works alongside 240p and 288p. Exact tested helper retained; rebuilt executable matches it. Release app includes calibration help and repeated-preference-save replacement. Gamma storage/IPC/recovery/native guards, timing/settings/lifecycle/UI suites, 21 app scenarios, helper ABI audit, 54 firmware targets and finalized package/member checks pass. Added sourced CRT brightness/contrast/gamma calibration guide, control-interaction research and HEN capability assessment. Source and six release assets prepared for GitHub publication.",
+  "note": "v1.4.3 published with native gamma and calibration guidance. New offline 540p60 investigation identifies OSSC Pro timing precedent, 4.93 1080i profile/clock/encoder paths, integer-line refresh choices and a component-HD-CRT validation plan. Added reproducible timing calculator; PS3 540p output remains unimplemented and unverified. No console access or output changes during this research.",
   "stages": [
     {
       "name": "Static analysis & claim verification (hypercalls, netemu, RSX attr 0x100)",
