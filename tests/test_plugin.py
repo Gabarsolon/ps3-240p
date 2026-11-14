@@ -248,7 +248,10 @@ def check_module_info():
 
 
 def main():
+    global PRX
     elf_path = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else ELF
+    if len(sys.argv) > 1:
+        PRX = elf_path.with_suffix(".prx")
     if not elf_path.exists():
         sys.exit(f"missing {elf_path}; run tools/build_plugin.py first")
     if not PRX.exists():

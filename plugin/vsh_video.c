@@ -93,3 +93,28 @@ int vsh_video_configure(unsigned resolution,unsigned aspect)
   * Last argument 1 submits without an unbounded wait for display completion. */
  return update_display(0,flags,mode,s.format,s.pitch,NULL,1);
 }
+int vsh_video_hd720(uint32_t *flags,uint32_t *mode)
+{
+ if(!map_mode||!flags||!mode)return -1;
+ *flags=*mode=0;
+ int rc=map_mode(flags,mode,2,2,0);
+ /* Private 4.93 VSH mapper 0xc7080: low byte 5 selects HDMI.
+  * Refuse clone/analog/50Hz output instead of guessing connection flags. */
+ if(rc<=0||(*flags&0xff)!=5||(*flags&0xf00)==0xf00||
+    (*flags&0x20000)||(*mode!=8&&*mode!=11))return -1;
+ /* 4.93 VSH 0xc56f4 may map a 720 source to native mode 8 when the
+  * selected output requires conversion to 1080i. That is not a physical
+  * 720p transition. Audited native mode 11 selects progressive 720;
+  * 0x435524/0x4303f0 and the 0xc7ecc configuration bridge establish the
+  * resolution/scan distinction. The HD caller has already fingerprinted
+  * 4.93 and must still verify the independent AV head before patching.
+  * Preserve the mapper's connector/refresh flags and all surface fields. */
+ *mode=11;
+ return 0;
+}
+int vsh_video_hd_submit(const vsh_video_state *surface,uint32_t flags,uint32_t mode)
+{
+ if(!update_display||!surface||(flags&0xff)!=5||(flags&0xf00)==0xf00||!mode||
+    !surface->pitch||surface->pitch<1920*4u||surface->pitch>65536||(surface->pitch&3))return -1;
+ return update_display(0,flags,mode,surface->format,surface->pitch,NULL,1);
+}

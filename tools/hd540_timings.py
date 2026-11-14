@@ -40,14 +40,31 @@ def report():
                 "target_hz": label,
                 "required_clock_mhz": float(2200 * total * refresh / 1_000_000),
             })
-    return {"status": "Offline arithmetic only; PS3 540p output unverified", "modes": modes, "target_clocks": targets}
+    reference = {
+        "name": "1920x540_60_reference",
+        "pixel_clock_mhz": 74.184,
+        "h_active": 1920, "h_sync_start": 2008, "h_sync_end": 2052, "h_total": 2200,
+        "v_active": 540, "v_sync_start": 542, "v_sync_end": 547, "v_total": 562,
+        "interlaced": False,
+        "status": "OSSC porch geometry at an arithmetic exact-60Hz clock; PS3 and receiver support unverified",
+    }
+    return {"status": "Offline arithmetic only; PS3 540p output unverified", "modes": modes,
+            "target_clocks": targets, "reference": reference}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="Print machine-readable results")
+    parser.add_argument("--modeline", action="store_true", help="Print the reference modeline without applying it")
     args = parser.parse_args()
     data = report()
+    if args.modeline:
+        r = data["reference"]
+        print(f'Modeline "{r["name"]}" {r["pixel_clock_mhz"]:.3f} '
+              f'{r["h_active"]} {r["h_sync_start"]} {r["h_sync_end"]} {r["h_total"]} '
+              f'{r["v_active"]} {r["v_sync_start"]} {r["v_sync_end"]} {r["v_total"]} +HSync +VSync')
+        print("# Reference only: does not change any display; PS3 and receiver support unverified.")
+        return
     if args.json:
         print(json.dumps(data, indent=2))
         return

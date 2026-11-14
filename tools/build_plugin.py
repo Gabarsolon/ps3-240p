@@ -48,11 +48,20 @@ def sha256(path):
 
 
 def main():
+    global ELF, PRX, SPRX
     parser = argparse.ArgumentParser()
+    parser.add_argument("--experimental-hd540", action="store_true",
+                        help="Build experimental helper under build/hd540; preserve the release helper")
     parser.add_argument("--name", default="vsh_240p")
     parser.add_argument("--keep-elf", action="store_true",
                         help="Keep the intermediate ELF (default: keep it, it is the packer input)")
     args = parser.parse_args()
+    if args.experimental_hd540:
+        from build_hd540_cache import build
+        build()
+        directory = ROOT / "build" / "hd540" / "plugin"
+        directory.mkdir(parents=True, exist_ok=True)
+        ELF, PRX, SPRX = (directory / ("vsh_240p" + suffix) for suffix in (".elf", ".prx", ".sprx"))
 
     gcc = SDK / "ppu" / "bin" / "ppu-gcc.exe"
     linker = SIBLING / "game" / "native-prx.ld"
@@ -76,6 +85,11 @@ def main():
         "-lio",
         "-o", ELF,
     ]
+    if args.experimental_hd540:
+        compile_cmd[1:1] = ["-DCRT_ENABLE_HD540=1"]
+        compile_cmd += [PLUGIN / "vsh_hd540.c", PLUGIN / "hd540_service.c",
+                        ROOT / "app/source/hd540_patch.c", ROOT / "app/source/hd540_hdmi.c", ROOT / "app/source/hd540_scale.c", ROOT / "app/source/hd540_cache.c",
+                        ROOT / "app/source/lv1_patch.c"]
     print("compiling:", " ".join(str(c) for c in compile_cmd))
     # The SDK's specs file resolves its own include paths from PS3DK.
     env = dict(os.environ)

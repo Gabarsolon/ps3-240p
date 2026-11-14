@@ -54,6 +54,7 @@ int videoGetResolution(int,videoResolution *);
 int videoGetDeviceInfo(int,int,videoDeviceInfo *);
 int videoGetResolutionAvailability(int,unsigned,int,int);
 int videoConfigure(int,videoConfiguration *,void *,int);
+int videoGetConfiguration(uint32_t,videoConfiguration *,void *);
 int ioPadInit(int);
 int ioPadEnd(void);
 int ioPadGetInfo(padInfo *);

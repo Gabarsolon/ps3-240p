@@ -1,8 +1,13 @@
 # 540p60 on HD CRTs: feasibility checkpoint
 
-Research date: 2026-11-13. **UNKNOWN:** working PS3 540p output. This is a
-research plan, not an implemented or hardware-verified app mode. No PS3 was
-contacted or reconfigured during this investigation.
+Research date: 2026-11-13. **UNKNOWN:** working PS3 540p output.
+Follow-up: [dev6 signal audit](HD540_SIGNAL_AUDIT.md) identifies unchanged
+stock HDMI mode description and unresolved raster/receiver semantics after
+the black-screen tests.
+**PROVEN (subsequent source/build work, 2026-11-14):** an opt-in HDMI-only
+timed prototype now builds; see [dev1 implementation and validation](HD540_DEV1.md).
+Its initial HD-menu startup regression is corrected in [dev2](HD540_DEV2.md).
+The initial investigation below involved no console contact or reconfiguration.
 
 ## Evidence and proposed direction
 
@@ -116,7 +121,7 @@ The successful SD patch changes a different control-word pattern.
 
 ## Implementation work still required
 
-**PROVEN (current project source):** the timing patcher only recognizes the
+**PROVEN (v1.4.3/default build):** the timing patcher only recognizes the
 SD records; native helper mode mapping/configuration only accepts SD modes.
 The gamma readback guard currently accepts only the tested SD source sizes.
 Sources: [lv1_patch.c](../app/source/lv1_patch.c),
@@ -165,7 +170,7 @@ does not inherently mean a 960 x 540 framebuffer. Changing output timing
 alone does not force every game to render at 960 x 540, raise game frame
 rates, or guarantee the TV bypasses its processing.
 
-**PROVEN (scope of this investigation):** no live prototype was installed,
+**PROVEN (scope of the initial investigation):** no live prototype was installed,
 and v1.4.3 remains unchanged. **INFERRED (test prerequisite):** the owner's
 current SD CRT/SCART setup is not a suitable target for approximately
 33.7 kHz HD timing; an identified HD-capable display and input are needed

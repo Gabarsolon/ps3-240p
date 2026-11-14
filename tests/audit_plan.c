@@ -1,6 +1,10 @@
 /* Expose the numeric plan to an optional private-input comparison. */
 #include "lv1_patch.h"
 #include "timing_payloads.h"
+#include "hd540_patch.h"
+#include "hd540_hdmi.h"
+#include "hd540_scale.h"
+#include "hd540_cache.h"
 #include <string.h>
 #ifdef _WIN32
 #define EXPORT __declspec(dllexport)
@@ -31,6 +35,16 @@ static uint64_t read_word(void *u,uint64_t a)
 }
 static void no_write(void *u,uint64_t a,uint64_t v){(void)u;(void)a;(void)v;}
 EXPORT int audit_count(void){return PATCH_WORDS;}
+EXPORT int audit_hd540_record(unsigned index,const uint64_t *words)
+{return hd540_record_valid(index,words);}
+EXPORT int audit_hd540_hdmi(const uint64_t *words)
+{return hd540_hdmi_template_identity(words);}
+EXPORT int audit_hd540_avi_code(const uint64_t *words)
+{return hd540_hdmi_identity(words);}
+EXPORT int audit_hd540_scale_code(const uint64_t *words)
+{return hd540_scale_identity(words);}
+EXPORT int audit_hd540_callback(const uint64_t *words)
+{return hd540_cache_identity(words);}
 EXPORT int audit_word(int index,uint32_t *va,uint64_t *word)
 {
  patch_context c;memset(&c,0,sizeof(c));c.read=read_word;c.write=no_write;c.scaler_mode=1;

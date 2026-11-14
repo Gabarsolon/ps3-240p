@@ -92,34 +92,47 @@ void cellGcmSetWriteBackEndLabel(CellGcmContextData *ctx,unsigned id,uint32_t va
 void cellGcmFlush(CellGcmContextData *ctx){(void)ctx;}
 int cellGcmAddressToOffset(void *p,uint32_t *offset){(void)p;*offset=0;return 0;}
 int cellGcmSetDisplayBuffer(uint8_t id,uint32_t offset,uint32_t pitch,uint32_t w,uint32_t h)
-{(void)id;(void)offset;assert(pitch==w*4&&w==720&&h==576);return 0;}
+{(void)id;(void)offset;assert(pitch==w*4);assert((w==720&&h==576)||(scenario>=21&&w==1920&&h==1080));return 0;}
 void cellGcmSetFlipMode(int mode){(void)mode;}
-int cellGcmSetFlip(CellGcmContextData *ctx,uint8_t id){(void)ctx;assert(id==flips%2);flip_mask|=1u<<id;flips++;if(os_active())overlay_flips++;return 0;}
+int cellGcmSetFlip(CellGcmContextData *ctx,uint8_t id){(void)ctx;assert(configured);assert(id==flips%2);flip_mask|=1u<<id;flips++;if(os_active())overlay_flips++;return 0;}
 void cellGcmSetWaitFlip(CellGcmContextData *ctx){(void)ctx;}
 int videoGetState(int out,int dev,videoState *s)
 {
  assert(out==0&&dev==0);state_reads++;memset(s,0,sizeof(*s));
  s->displayMode.resolution=5;s->displayMode.scanMode=0;s->displayMode.aspect=1;s->displayMode.refreshRates=2;
  s->state=CELL_VIDEO_OUT_OUTPUT_STATE_ENABLED;
+ if(scenario>=21){s->displayMode.resolution=1;s->displayMode.aspect=2;s->displayMode.refreshRates=1;s->displayMode.scanMode=scenario==22?1:0;}
  if(scenario==1)s->state=CELL_VIDEO_OUT_OUTPUT_STATE_DISABLED;
  if(scenario==2&&configured&&post_config_reads++<2)s->state=CELL_VIDEO_OUT_OUTPUT_STATE_PREPARING;
  if(scenario==3&&configured)s->state=CELL_VIDEO_OUT_OUTPUT_STATE_PREPARING;
  if(scenario==6&&configured)s->state=CELL_VIDEO_OUT_OUTPUT_STATE_DISABLED;
  return scenario==4?-1:0;
 }
-int videoGetResolution(int id,videoResolution *r){assert(id==5);r->width=720;r->height=576;return 0;}
-int videoGetDeviceInfo(int out,int index,videoDeviceInfo *d){(void)out;(void)index;d->portType=VIDEO_PORT_SCART;return 0;}
+int videoGetResolution(int id,videoResolution *r){assert(id==5||(scenario>=21&&id==1));r->width=id==1?1920:720;r->height=id==1?1080:576;return 0;}
+int videoGetDeviceInfo(int out,int index,videoDeviceInfo *d){(void)out;(void)index;d->portType=scenario==21||scenario==22?1:VIDEO_PORT_SCART;return 0;}
 int videoGetResolutionAvailability(int out,unsigned id,int aspect,int option)
 {(void)out;(void)id;(void)aspect;(void)option;return 1;}
 int videoConfigure(int out,videoConfiguration *cfg,void *option,int blocking)
-{assert(out==0&&cfg->resolution==5&&cfg->pitch==2880&&blocking==0);(void)option;configures++;configured=1;return scenario==5?-1:0;}
+{assert(out==0&&cfg->resolution==(scenario>=21?1:5)&&cfg->pitch==(scenario>=21?7680u:2880u)&&cfg->format==VIDEO_BUFFER_FORMAT_XRGB&&blocking==0);(void)option;configures++;configured=1;return scenario==5?-1:0;}
+int videoGetConfiguration(uint32_t out,videoConfiguration *cfg,void *option)
+{
+ assert(!out&&!option);memset(cfg,0,sizeof(*cfg));cfg->resolution=scenario>=21?1:5;
+ cfg->format=VIDEO_BUFFER_FORMAT_XRGB;cfg->pitch=scenario>=21?7680:2880;
+ /* Model an incompatible inherited XMB surface, and a failed driver update. */
+ if(scenario>=21&&(!configured||scenario==23)){cfg->format=2;cfg->pitch=8192;}
+ return 0;
+}
 int ioPadInit(int ports){assert(ports==7);return 0;}
 int ioPadEnd(void){return 0;}
 int ioPadGetInfo(padInfo *p){memset(p,0,sizeof(*p));p->status[0]=1;return 0;}
 int ioPadGetData(int port,padData *p)
 {
  assert(port==0&&flip_mask==3&&completed_frames>=2&&!os_active());memset(p,0,sizeof(*p));p->len=1;
- if(scenario==19||scenario==20){
+ if(scenario==22){
+  const unsigned script[]={UP,0,UP,0,CROSS,0,CROSS,0,CIRCLE,0,CIRCLE,0,CIRCLE};
+  assert(pad_calls<sizeof(script)/sizeof(script[0]));unsigned key=script[pad_calls++];
+  p->BTN_UP=!!(key&UP);p->BTN_CROSS=!!(key&CROSS);p->BTN_CIRCLE=!!(key&CIRCLE);
+ }else if(scenario==19||scenario==20){
   unsigned key=0;
   if(pad_calls<16){if(!(pad_calls&1))key=DOWN;}
   else {
@@ -168,7 +181,21 @@ int main(int argc,char **argv)
  assert(switch_stock(&production,5,1)==-1&&configures==0&&state_reads==0);
  assert(strstr(production.error,"disabled"));
  int rc=ps3_app_main();
- if(scenario==19||scenario==20){
+ if(scenario==23){
+  assert(rc==1&&flips==0&&configures==1&&strstr(log_capture,"Startup stopped at video configure"));
+ }else if(scenario==21||scenario==22){
+  assert(rc==0&&exit_code==0&&configures==1&&!uart_probes);
+  assert(strstr(log_capture,"CRT Toolset build " CRT_BUILD_VERSION));
+  assert(strstr(log_capture,"Inherited framebuffer rc=00000000 id=1 format=2 pitch=8192"));
+  assert(strstr(log_capture,"Framebuffer configuration readback rc=00000000 id=1 format=0 pitch=7680"));
+  if(scenario==21)assert(flips==2&&pad_calls==1);
+  else {
+   assert(pad_calls==13&&strstr(log_capture,"HD app preflight refused"));
+#ifdef CRT_ENABLE_HD540
+   assert(!hd_pending_sequence);
+#endif
+  }
+ }else if(scenario==19||scenario==20){
   assert(rc==0&&exit_code==0&&configures==1&&pad_calls==31&&!uart_probes);
   assert(gamma_value==(scenario==19?111:100)&&!gamma_preview);
   assert(strstr(log_capture,"Gamma preview value="));

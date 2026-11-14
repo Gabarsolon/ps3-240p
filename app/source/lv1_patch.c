@@ -42,11 +42,10 @@ static const uint64_t pal3[7]={
  UINT64_C(0x00000249052e04af),UINT64_C(0x04af03b1024e023f),
  UINT64_C(0x0003000000000000)};
 
-int patch_resolve(patch_context *c)
+static int service_pages(patch_context *c,mapping pages[512],int *out_count)
 {
- mapping pages[512];int count=0,index=0;
- c->ready=c->have_saved=c->video_ready=0;c->video_context=0;c->error[0]=0;
- if(!c->read||!c->write)return fail(c,"Missing LV1 transport");
+ int count=0;
+ if(!c->read)return fail(c,"Missing LV1 transport");
  uint64_t proc=read64(c,PROCESS_TABLE+10*16+8);
  if(!bounded(proc,0x28)||(proc&7)||read32(c,proc)!=10)
   return fail(c,"4.93 sysmgr PID 10 not found; check CFW syscalls");
@@ -69,6 +68,25 @@ int patch_resolve(patch_context *c)
   count++;node=read32(c,node+0x14);
  }
  if(!count)return fail(c,"Empty protection-page list");
+ *out_count=count;return 0;
+}
+int patch_map_targets(patch_context *c,const uint32_t *va,uint64_t *pa,unsigned n)
+{
+ mapping pages[512];int count=0;
+ if(!c||!va||!pa||!n||n>512)return -1;
+ if(service_pages(c,pages,&count))return -1;
+ for(unsigned i=0;i<n;i++){
+  if(translate(pages,count,va[i],&pa[i]))return fail(c,"Service RAM page unavailable/ambiguous");
+  for(unsigned j=0;j<i;j++)if(pa[j]==pa[i])return fail(c,"Aliased service RAM targets");
+ }
+ return 0;
+}
+int patch_resolve(patch_context *c)
+{
+ mapping pages[512];int count=0,index=0;
+ c->ready=c->have_saved=c->video_ready=0;c->video_context=0;c->error[0]=0;
+ if(!c->write)return fail(c,"Missing LV1 transport");
+ if(service_pages(c,pages,&count))return -1;
  for(int profile=1;profile<=4;profile++){
   int pal=profile>=3;
   const uint64_t *meta=pal?g_stock_288p_metadata:g_stock_240p_metadata;

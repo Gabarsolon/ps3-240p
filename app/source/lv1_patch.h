@@ -40,6 +40,9 @@ typedef struct {
  char error[160];
 } patch_context;
 int patch_resolve(patch_context *);
+/* Resolve ordinary service RAM through the current protection-page list.
+ * Read-only discovery; callers must validate their own complete record identity. */
+int patch_map_targets(patch_context *,const uint32_t *,uint64_t *,unsigned);
 int patch_state(patch_context *,int family);
 int patch_snapshot(patch_context *);
 int patch_apply(patch_context *,int family); /* Also restores the other family. */

@@ -1,6 +1,6 @@
 {
-  "updated": "2026-11-13",
-  "note": "v1.4.3 published with native gamma and calibration guidance. New offline 540p60 investigation identifies OSSC Pro timing precedent, 4.93 1080i profile/clock/encoder paths, integer-line refresh choices and a component-HD-CRT validation plan. Added reproducible timing calculator; PS3 540p output remains unimplemented and unverified. No console access or output changes during this research.",
+  "updated": "2026-11-14",
+  "note": "PROVEN: dev19 owner repeat held 540p candidate 15.453232 seconds and restored stock 1080i with error 0; CLAIMED owner confirms picture works. Exact tested 308560-byte package prepared for v1.5.0-dev19 HDMI-only prerelease, with documented per-boot checks and component/HD CRT/game limits.",
   "stages": [
     {
       "name": "Static analysis & claim verification (hypercalls, netemu, RSX attr 0x100)",

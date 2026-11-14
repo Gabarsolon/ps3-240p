@@ -34,6 +34,12 @@
 #include "gamma.h"
 #include "gamma_protocol.h"
 #include "gamma_ipc.h"
+#ifdef CRT_ENABLE_HD540
+#include "hd540_protocol.h"
+#define CRT_BUILD_VERSION "1.5.0-dev19"
+#else
+#define CRT_BUILD_VERSION "1.4.3"
+#endif
 
 SYS_PROCESS_PARAM(1001,0x100000);
 #define HOST_SIZE (32u*1024*1024)
@@ -425,6 +431,12 @@ static int configure(void *u,unsigned id)
   (void)pump();if(now()>=deadline){app_log("Video transition timeout id=%u state=%u reported_id=%u",id,next.state,next.displayMode.resolution);return -1;}
   usleep(1000);
  }
+ /* Registering display buffers does not initialize the scanout format.
+  * Check the real app configuration before drawing packed 32-bit pixels. */
+ videoConfiguration actual={0};rc=videoGetConfiguration(0,&actual,NULL);
+ app_log("Framebuffer configuration readback rc=%08x id=%u format=%u pitch=%u expected_pitch=%u",
+  (unsigned)rc,actual.resolution,actual.format,actual.pitch,cfg.pitch);
+ if(rc||actual.resolution!=id||actual.format!=VIDEO_BUFFER_FORMAT_XRGB||actual.pitch!=cfg.pitch)return -1;
  return read_video();
 }
 static int frame(const ui_view *view)
@@ -686,6 +698,97 @@ static void gamma_menu(void)
   }
  }
 }
+#ifdef CRT_ENABLE_HD540
+static unsigned hd_sequence;
+static unsigned hd_pending_sequence;
+static int hd_publish(unsigned action,unsigned *sequence)
+{
+ if(!hd_sequence)hd_sequence=(unsigned)now();if(!++hd_sequence)++hd_sequence;
+ /* Reuse the tested atomic 16-byte inbox publisher, with the HD magic. */
+ gamma_request envelope={HD540_MAGIC,hd_sequence,action,(action==HD540_TEST||action==HD540_ROUNDTRIP||action==HD540_HDMI_CONTROL||action==HD540_HDMI_720_CONTROL)?HD540_EXPERIMENTAL_VALUE:0};
+ int error=0,rc=gamma_publish(HD540_REQUEST,&envelope,&error);
+ app_log("HD publish action=%u seq=%u rc=%d errno=%d",action,hd_sequence,rc,error);
+ *sequence=hd_sequence;return rc;
+}
+static int hd_reply(unsigned sequence,hd540_reply *reply)
+{
+ FILE *f=fopen(HD540_REPLY,"rb");if(!f)return -1;
+ unsigned char data[sizeof(*reply)+1];size_t n=fread(data,1,sizeof(data),f);int bad=ferror(f);fclose(f);
+ if(bad||n!=sizeof(*reply))return -1;
+ memcpy(reply,data,sizeof(*reply));
+ return reply->magic==HD540_MAGIC&&reply->sequence==sequence&&reply->status<=HD540_WAIT_APP_EXIT?0:-1;
+}
+static void hd_run(unsigned action)
+{
+ if(read_video()||device.portType!=1||state.displayMode.resolution!=1||
+    state.displayMode.scanMode!=0||!(state.displayMode.refreshRates&5u)||
+    (state.displayMode.refreshRates&2u)||flag_present(ENFORCER_FLAG)){
+  app_log("HD app preflight refused port=%u res=%u scan=%u refresh=%u",device.portType,state.displayMode.resolution,state.displayMode.scanMode,state.displayMode.refreshRates);
+  status("HD experiment unavailable","Start with HDMI 1080i at 59.94/60Hz. Use Pause SD enforcement in this submenu if needed; reboot to clear old SD timing edits. This first build does not test component or RGB SCART.");return;
+ }
+ if(gamma_helper()||!flag_present(HD540_READY)){
+  status("HD helper unavailable","Install the matching experimental build and reboot once, then reopen CRT Toolset. An older resident helper cannot perform this test. No HD patch was requested.");return;
+ }
+ unsigned sequence=0;if(hd_publish(action,&sequence)){
+  status("HD command not sent","Could not publish the helper command. See the app log.");return;
+ }
+ if(action!=HD540_INSPECT)hd_pending_sequence=sequence;
+ const char *names[]={"Inspection passed","Leaving 1080i","Entering candidate timing","Candidate active: 15-second test",
+  "Restoring timing RAM","Recovery: selecting 720p","Recovery: returning to 1080i","Stock 1080i restored",
+  "Experiment refused","Recovery stopped: reboot required","Waiting for app exit"};
+ uint64_t deadline=now()+40000000;unsigned last=UINT32_MAX;int cancelled=0;
+ while(!exiting&&now()<deadline){
+  hd540_reply reply={0};int valid=!hd_reply(sequence,&reply);
+  if(valid&&reply.status!=last){last=reply.status;app_log("HD state=%u error=%u",reply.status,reply.detail);}
+  if(valid&&reply.status==HD540_WAIT_APP_EXIT&&action!=HD540_INSPECT){
+   app_log("HD test queued; normal app exit before any display change");
+   hd_pending_sequence=0;exiting=1;return;
+  }
+  if(valid&&(reply.status==HD540_DONE||reply.status==HD540_REFUSED||
+      (action==HD540_INSPECT&&reply.status==HD540_IDLE))){
+   if(action!=HD540_INSPECT)hd_pending_sequence=0;
+   status(reply.status==HD540_REFUSED?"HD inspection refused":reply.status==HD540_DONE?"Stock 1080i restored":"HD preflight passed",
+    reply.status==HD540_REFUSED?"The output/firmware guards or prerequisites did not pass. First run the stock round trip, then the stock 720p AVI-only control before the 540p candidate. Check its picture before proceeding. See /dev_hdd0/tmp/vsh_240p.log.":
+    reply.status==HD540_DONE?(reply.detail?"A test/transition error occurred. The helper restored timing RAM and confirmed stock 1080i in the AV cache. This is not proof of a 540p waveform.":
+    "The helper restored timing RAM and confirmed stock 1080i in the AV cache. Save the capture and logs for analysis; picture stability alone does not prove 540p."):
+    "HDMI 1080i, native transition mapping and stock 4.93 timing records passed inspection. No display or timing changes were made.");return;
+  }
+  char text[512];const char *phase=valid?names[reply.status]:"Waiting for helper acknowledgement";
+  const char *experiment=action==HD540_HDMI_720_CONTROL?
+   "Control: stock progressive 720p timing and transmitter template. Only the generated AVI video code is cleared for 15 seconds.":action==HD540_HDMI_CONTROL?
+   "Control: stock 1080i timing and transmitter template. Only the generated AVI video code is cleared for 15 seconds.":
+   "Candidate: unverified progressive 540-active / 562-total raster with full source dimensions and AVI code 0, held for 15 seconds.";
+  snprintf(text,sizeof(text),"%s\n\n%s\n\nAutomatic recovery restores RAM, selects stock 720p, then returns to 1080i.\n\nCircle: request early recovery. Leave the controller untouched to observe the test.",phase,experiment);
+  ui_view view={0};view.title="Experimental HDMI 540p";view.text=text;view.page=-1;
+  if(frame(&view))break;
+  if((input()&CIRCLE)&&!cancelled){unsigned ignored=0;(void)hd_publish(HD540_CANCEL,&ignored);cancelled=1;}
+  usleep(50000);
+ }
+ unsigned ignored=0;(void)hd_publish(HD540_CANCEL,&ignored);
+ if(!exiting)status("HD recovery not confirmed","The app stopped waiting and requested cancellation. The resident helper retains recovery and retries. If the picture does not return, reboot. Do not start another timing experiment.");
+}
+static void hd_menu(void)
+{
+ const char *items[]={"Inspect HDMI 1080i (read only)","Test stock 720p / 1080i round trip (exit to XMB)","Test AVI packet only (stock 720p; 15 seconds)","Test AVI packet only (stock 1080i; 15 seconds)","Test 540p with custom AVI packet (15 seconds)","Pause SD enforcement (no video switch)","Back"};int selected=0;
+ while(!exiting){
+  if(hd_pending_sequence){
+   status("HD recovery pending","The previous HD test has not confirmed restoration. Wait for recovery or reboot before another timing/gamma change.");return;
+  }
+  ui_view view={0};view.title="HD CRT experiments / dev19";view.items=items;view.count=7;view.selected=selected;view.page=-1;
+  if(frame(&view))break;unsigned key=input();if(key&CIRCLE)break;
+  if(key&UP)selected=(selected+6)%7;if(key&DOWN)selected=(selected+1)%7;
+  if(key&CROSS){
+   if(selected==6)break;
+   if(selected==5){
+    clear_flag(ENFORCER_FLAG);int armed=flag_present(ENFORCER_FLAG);
+    app_log("HD pause SD enforcement: armed=%d",armed);
+    status(armed?"Could not pause SD enforcement":"SD enforcement paused",
+     armed?"Could not remove the helper enable flag; see the app log.":"The background SD corrector is disarmed. The video mode was not changed. Reboot if old timing edits are still active; HD inspection will check the stock records.");
+   }else hd_run(selected==0?HD540_INSPECT:selected==1?HD540_ROUNDTRIP:selected==2?HD540_HDMI_720_CONTROL:selected==3?HD540_HDMI_CONTROL:HD540_TEST);
+  }
+ }
+}
+#endif
 static void diagnostics(void)
 {
  char text[1000];
@@ -814,7 +917,7 @@ int main(void)
  (void)sysLv2FsMkdir("/dev_hdd0/tmp",0777);
  if(sysLv2FsOpen(LOG_PATH,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&log_fd,0666,NULL,0))log_fd=-1;
  write_flag(APP_ACTIVE_FLAG);
- app_log("CRT Toolset build 1.4.3; native enabled=%u preparing=%u; timing tests ENABLED",CELL_VIDEO_OUT_OUTPUT_STATE_ENABLED,CELL_VIDEO_OUT_OUTPUT_STATE_PREPARING);
+ app_log("CRT Toolset build " CRT_BUILD_VERSION "; native enabled=%u preparing=%u; timing tests ENABLED",CELL_VIDEO_OUT_OUTPUT_STATE_ENABLED,CELL_VIDEO_OUT_OUTPUT_STATE_PREPARING);
  void *host=memalign(1024*1024,HOST_SIZE);
  if(!host){app_log("Startup failed: host allocation");return 1;}
  int rc=cellSysutilRegisterCallback(0,event,NULL);if(rc){app_log("Startup callback rc=%08x",(unsigned)rc);return 1;}
@@ -828,7 +931,14 @@ int main(void)
  cellGcmSetFlipMode(GCM_FLIP_VSYNC);cellGcmResetFlipStatus();
  if(read_video()){app_log("Startup stopped at video query");return 1;}
  unsigned initial=state.displayMode.resolution;
+ unsigned initial_scan=state.displayMode.scanMode;
+ videoConfiguration inherited={0};int inherited_rc=videoGetConfiguration(0,&inherited,NULL);
+ app_log("Inherited framebuffer rc=%08x id=%u format=%u pitch=%u scan=%u",
+  (unsigned)inherited_rc,inherited.resolution,inherited.format,inherited.pitch,initial_scan);
+ /* Even when the resolution is unchanged, explicitly initialize XRGB32
+  * and the app's pitch. Dev1's HD shortcut inherited the XMB surface setup. */
  if(configure(NULL,initial)){app_log("Startup stopped at video configure");return 1;}
+ app_log("Startup scan readback before=%u after=%u",initial_scan,state.displayMode.scanMode);
  rc=ioPadInit(7);if(rc){app_log("Startup controller init rc=%08x",(unsigned)rc);return 1;}
  flow.patch=&patch;flow.available=available;flow.configure=configure;
  if(crt_gamma_load(GAMMA_PATH,&gamma_value))gamma_value=CRT_GAMMA_NEUTRAL;
@@ -847,14 +957,23 @@ int main(void)
   "Geometry pattern (measure crop)",
   "Gamma / shadow correction",
   "Recheck timing memory",
+#ifdef CRT_ENABLE_HD540
+  "HD CRT / experimental 540p",
+#endif
   "Exit to XMB"
  };
  const int item_count=(int)(sizeof(items)/sizeof(items[0]));
  int selected=0,cached_ntsc=STATE_UNKNOWN,cached_pal=STATE_UNKNOWN,outcome=0;
  uint64_t next_memory_poll=0;
  while(!exiting){
+#ifdef CRT_ENABLE_HD540
+  if(hd_pending_sequence){
+   hd540_reply reply;
+   if(!hd_reply(hd_pending_sequence,&reply)&&(reply.status==HD540_DONE||reply.status==HD540_REFUSED))hd_pending_sequence=0;
+  }
+#endif
   if(!os_active()&&now()>=next_memory_poll){cached_ntsc=patch_state(&patch,0);cached_pal=patch_state(&patch,1);next_memory_poll=now()+1000000;}
-  char title[200];snprintf(title,sizeof(title),"CRT Toolset / v1.4.3\nPAL: %s  NTSC: %s",memory_state(cached_pal),memory_state(cached_ntsc));
+  char title[200];snprintf(title,sizeof(title),"CRT Toolset / v" CRT_BUILD_VERSION "\nPAL: %s  NTSC: %s",memory_state(cached_pal),memory_state(cached_ntsc));
   ui_view view={0};view.title=title;view.items=items;view.count=item_count;view.selected=selected;view.page=-1;
   if(frame(&view)){app_log("Frame loop stopped: exit_request=%d gpu_ok=%d",exiting,gpu_ok);if(!exiting)outcome=1;break;}
   /* Complete the first pair before accepting a choice, including quit. */
@@ -868,6 +987,11 @@ int main(void)
   if(key&CIRCLE)break;
   if(key&UP)selected=(selected+item_count-1)%item_count;if(key&DOWN)selected=(selected+1)%item_count;
   if(key&CROSS){
+#ifdef CRT_ENABLE_HD540
+   if(hd_pending_sequence&&(selected<6||selected==8)){
+    status("HD recovery pending","Wait for confirmed stock recovery or reboot before another timing/gamma change.");continue;
+   }
+#endif
    if(selected==0)test_mode(MODE_240P_NTSC);
    else if(selected==1)enable_mode(4);
    else if(selected==2)test_mode(MODE_288P_PAL);
@@ -878,11 +1002,17 @@ int main(void)
    else if(selected==7){pattern_mode=1;app_log("Geometry pattern shown; content=%u lines",(unsigned)active_raster_height());}
    else if(selected==8)gamma_menu();
    else if(selected==9){int rc=inspect();status(rc?"Memory unavailable":"Memory checked",rc?patch.error:"All target records are recognized. No memory writes performed.");}
+#ifdef CRT_ENABLE_HD540
+   else if(selected==10)hd_menu();
+#endif
    else break;
    next_memory_poll=0;
   }
  }
  if(flow.pending)(void)switch_revert(&flow);
+#ifdef CRT_ENABLE_HD540
+ if(hd_pending_sequence){unsigned ignored=0;(void)hd_publish(HD540_CANCEL,&ignored);}
+#endif
  app_log("Exit; pending_recovery=%d",flow.pending);
  clear_flag(APP_ACTIVE_FLAG);
  app_log("Exit: active flag cleared");

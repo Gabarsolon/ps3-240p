@@ -19,6 +19,9 @@
 #include "vsh_gamma.h"
 #include "gamma_service.h"
 #include "../app/source/gamma_protocol.h"
+#ifdef CRT_ENABLE_HD540
+#include "vsh_hd540.h"
+#endif
 
 #define ENFORCER_FLAG   "/dev_hdd0/tmp/240p_enforcer.on"
 #define APP_ACTIVE_FLAG "/dev_hdd0/tmp/240p_app.active"
@@ -79,7 +82,7 @@ static void log_line(const char *event, uint32_t code) {
     while (n) *p++ = digits[--n];
     *p++ = ' ';
     const char *s = event;
-    while (*s) *p++ = *s++;
+    while (*s && p < buf + sizeof(buf) - 16) *p++ = *s++;
     *p++ = ' ';
     *p++ = 'c'; *p++ = 'o'; *p++ = 'd'; *p++ = 'e'; *p++ = '=';
     static const char hexdig[] = "0123456789abcdef";
@@ -120,17 +123,47 @@ static void gamma_poll(void)
   gamma_answer(reply.sequence,reply.status,reply.value);
  }
 }
+#ifdef CRT_ENABLE_HD540
+static hd540_service hd_session;
+static void hd_poll(void)
+{
+ int fd=-1;uint64_t got=0;hd540_request request={0};
+ if(!sysLv2FsOpen(HD540_REQUEST,SYS_O_RDONLY,&fd,0,NULL,0)){
+  unsigned char data[sizeof(request)+1];
+  int rc=sysLv2FsRead(fd,data,sizeof(data),&got);sysLv2FsClose(fd);
+  if(!rc&&got==sizeof(request))for(unsigned i=0;i<sizeof(request);i++)((unsigned char *)&request)[i]=data[i];
+ }
+ hd540_reply reply;
+ if(hd540_service_tick(&hd_session,vsh_hd540_ops(),sys_time_get_system_time(),&request,&reply)){
+  log_line("hd540_state",reply.status);log_line("hd540_error",reply.detail);
+  if(reply.status==HD540_REFUSED||reply.status==HD540_RECOVERY_FAILED)
+   log_line(vsh_hd540_error(),reply.status);
+  uint64_t wrote=0;
+  if(!sysLv2FsOpen(HD540_REPLY,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&fd,0666,NULL,0)){
+   int rc=sysLv2FsWrite(fd,&reply,sizeof(reply),&wrote);sysLv2FsClose(fd);
+   if(rc||wrote!=sizeof(reply))log_line("hd540_reply_failed",(unsigned)rc);
+  }
+ }
+}
+#endif
 
 static void corrector(void *arg) {
     (void)arg;
     log_open();
     log_line("start_native_v6_gamma", 0);
+#ifdef CRT_ENABLE_HD540
+    vsh_hd540_set_log(log_line);
+#endif
     int bound=vsh_video_bind();
     log_line("native_bind",(uint32_t)bound);
     if(bound){atomic_store(&running,0);sysLv2FsClose(log_fd);log_fd=-1;exit_thread();}
     int gamma_bound=vsh_gamma_bind();log_line("gamma_bind",(uint32_t)gamma_bound);
     (void)sysLv2FsUnlink(GAMMA_REQUEST);(void)sysLv2FsUnlink(GAMMA_REPLY);
     (void)sysLv2FsUnlink(GAMMA_READY);
+#ifdef CRT_ENABLE_HD540
+    (void)sysLv2FsUnlink(HD540_REQUEST);(void)sysLv2FsUnlink(HD540_REPLY);
+    (void)sysLv2FsUnlink(HD540_READY);
+#endif
 
     /* Liveness breadcrumb: "start" only proves the thread began. If the next
      * line is missing, the thread never got scheduled again (or the log fd
@@ -141,6 +174,9 @@ static void corrector(void *arg) {
     int ready=-1;
     if(sysLv2FsOpen(READY_PATH,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&ready,0666,NULL,0)==0)sysLv2FsClose(ready);
     if(!gamma_bound&&sysLv2FsOpen(GAMMA_READY,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&ready,0666,NULL,0)==0)sysLv2FsClose(ready);
+#ifdef CRT_ENABLE_HD540
+    if(sysLv2FsOpen(HD540_READY,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&ready,0666,NULL,0)==0)sysLv2FsClose(ready);
+#endif
 
     unsigned stable = 0, attempts = 0;
     uint64_t idle_until = 0;
@@ -149,6 +185,11 @@ static void corrector(void *arg) {
     uint32_t last_state=UINT32_MAX;int last_error=0;
     while (atomic_load(&running)) {
         nap_ms(500);
+#ifdef CRT_ENABLE_HD540
+        hd_poll();
+        /* HD owns display recovery until stock RAM and timing are verified. */
+        if(hd540_service_busy(&hd_session))continue;
+#endif
         if(!gamma_bound)gamma_poll();
         int armed = flag_exists(ENFORCER_FLAG);
         if (armed != seen_armed) { seen_armed = armed; target=read_target(); stable=attempts=0; log_line(armed ? "armed" : "disarmed", target); }
@@ -194,6 +235,15 @@ static void corrector(void *arg) {
         log_line(rc ? "correct_fail" : "correct_sent", (uint32_t)rc);
     }
     log_line("stop", 0);
+#ifdef CRT_ENABLE_HD540
+    if(hd540_service_busy(&hd_session)){
+     hd540_request cancel={HD540_MAGIC,hd_session.seen+1u,HD540_CANCEL,0};
+     if(!cancel.sequence)cancel.sequence=1;
+     (void)hd540_service_tick(&hd_session,vsh_hd540_ops(),sys_time_get_system_time(),&cancel,NULL);
+     while(hd540_service_busy(&hd_session)&&!hd_session.halted){nap_ms(500);hd_poll();}
+    }
+    (void)sysLv2FsUnlink(HD540_READY);
+#endif
     (void)gamma_restore();(void)sysLv2FsUnlink(GAMMA_READY);
     (void)sysLv2FsUnlink(READY_PATH);
     if(log_fd>=0){sysLv2FsClose(log_fd);log_fd=-1;}

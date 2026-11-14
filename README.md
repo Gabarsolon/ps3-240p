@@ -26,10 +26,21 @@ CRT setup. [Release notes](docs/RELEASE_v1.4.3.md) and
 | Native PS3 homebrew application (EBOOT.BIN / PS3-240P.pkg) | 10% | `████████░░` 80.0% |
 | Hardware waveform verification (line count, sync, 15.7 kHz) | 5% | `░░░░░░░░░░` 0% |
 
-_Last update: 2026-11-13. v1.4.3 published with native gamma and calibration guidance. New offline 540p60 investigation identifies OSSC Pro timing precedent, 4.93 1080i profile/clock/encoder paths, integer-line refresh choices and a component-HD-CRT validation plan. Added reproducible timing calculator; PS3 540p output remains unimplemented and unverified. No console access or output changes during this research._
+_Last update: 2026-11-14. PROVEN: dev19 owner repeat held 540p candidate 15.453232 seconds and restored stock 1080i with error 0; CLAIMED owner confirms picture works. Exact tested 308560-byte package prepared for v1.5.0-dev19 HDMI-only prerelease, with documented per-boot checks and component/HD CRT/game limits._
 <!-- progress:end -->
 
 The progress block is generated from `docs/progress.json`; percentages estimate work, not electrical verification.
+
+## Experimental HDMI 540p prerelease
+
+[v1.5.0-dev19 prerelease](https://github.com/Gabarsolon/ps3-240p/releases/tag/v1.5.0-dev19)
+adds a **15-second HDMI 540p test**.
+**PROVEN (capture/logs):** the full XMB picture fits and stock 1080i recovery
+completes. **CLAIMED (owner):** the manual test works.
+HD CRT/component compatibility and game coverage remain **UNKNOWN**;
+the HD test currently accepts HDMI only. It does not keep 540p permanently.
+[Install steps, required checks and tester feedback](docs/RELEASE_v1.5.0-dev19.md).
+Stable v1.4.3 remains the normal release.
 
 ## v1.4.3: native analog gamma
 
@@ -156,7 +167,8 @@ The app builder packages the tracked `plugin/vsh_240p.sprx`. Rebuilding the help
 
 ## Research and history
 
-- [540p60 for HD CRTs: source evidence, PS3 timing profiles and remaining work](docs/HD_CRT_540P.md). **UNKNOWN:** working PS3 output; research only, not an app feature.
+- [540p for HD CRTs: research](docs/HD_CRT_540P.md), [dev18 detected progressive HDMI output](docs/HD540_DEV18.md) and [dev19 app-menu pitch fix](docs/HD540_DEV19.md). **PROVEN on the tested capture setup:** the full XMB picture fits and the receiver reports 1920x540/progressive. Dev19 fixes a stale app-pitch check that aborted owner-launched tests; its actual app-menu run held the candidate for 15.220 seconds and restored stock 1080i/source pitch with no reported error. Native scanout samples alternate rows of the unchanged 1080-line source. **UNKNOWN:** measured refresh, HD CRT/component behavior and game coverage. Experimental; absent from stable v1.4.3.
+- [CECH-2004A lookup failure report and read-only diagnostic](docs/CECH2004A_LOOKUP_REPORT.md). **CLAIMED (tester):** v1.4.3 cannot locate PID 10. **PROVEN:** the app assumes that PID. **UNKNOWN:** whether the tester has a shifted PID, unavailable LV1 reads or a different layout; no model-specific fix is claimed.
 - [Current geometry evidence and test results](docs/GEOMETRY_STATUS_2026-11-13.md).
 - [Earlier app review and failed experiments](docs/APP_REVIEW_2026-11-11.md).
 - [Verified research](docs/RESEARCH.md), [AV-manager trace](docs/LV1_AV_TRACE.md), [PS1/PS2 video paths](docs/BC_PS1_EMULATOR_VIDEO.md), and [live page resolution](docs/LV1_SYSMGR_SS_LOADADDR.md).

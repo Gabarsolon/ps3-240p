@@ -14,12 +14,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=ROOT / "deliverables/CRT-Toolset-menu.png")
     parser.add_argument("--gamma", help="Render the production gamma preview instead, e.g. 2.20")
+    parser.add_argument("--experimental-hd540", action="store_true", help="Render the opt-in HD development menu")
     args = parser.parse_args()
     source = (ROOT / "app/source/main.c").read_text(encoding="utf-8")
-    block = re.search(r"const char \*items\[\]\s*=\s*\{(.*?)\};", source, re.S)
+    block = re.search(r"const char \*items\[\]\s*=\s*\{(.*?)\};", source[source.index("int main(void)"):], re.S)
     assert block, "Production menu not found"
-    items = [json.loads(s) for s in re.findall(r'"(?:[^"\\]|\\.)*"', block[1])]
-    version = re.search(r'CRT Toolset / v([^\\"\n]+)', source)[1]
+    menu_source = block[1]
+    if not args.experimental_hd540:
+        menu_source = re.sub(r"#ifdef CRT_ENABLE_HD540\s*.*?#endif", "", menu_source, flags=re.S)
+    items = [json.loads(s) for s in re.findall(r'"(?:[^"\\]|\\.)*"', menu_source)]
+    versions = re.findall(r'#define CRT_BUILD_VERSION "([^"]+)"', source)
+    version = versions[0 if args.experimental_hd540 else -1]
     title = f"CRT Toolset / v{version}\nPAL: candidate  NTSC: candidate"
     build = ROOT / "build/menu-preview"
     build.mkdir(parents=True, exist_ok=True)

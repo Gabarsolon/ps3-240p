@@ -14,4 +14,7 @@ int vsh_video_bind(void);
 int vsh_video_query(vsh_video_state *);
 int vsh_video_map(unsigned resolution,unsigned aspect,uint32_t *flags,uint32_t *mode);
 int vsh_video_configure(unsigned resolution,unsigned aspect);
+/* Experimental HD calls are separate from the stable SD corrector. */
+int vsh_video_hd720(uint32_t *,uint32_t *);
+int vsh_video_hd_submit(const vsh_video_state *,uint32_t,uint32_t);
 #endif

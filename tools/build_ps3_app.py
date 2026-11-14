@@ -27,7 +27,7 @@ def sha256_file(path: Path) -> str:
             h.update(chunk)
     return h.hexdigest()
 
-def main(sdk_path: str):
+def main(sdk_path: str, experimental_hd540=False):
     sdk = Path(sdk_path).resolve()
     if not sdk.exists():
         raise FileNotFoundError(f"PS3DK SDK not found at {sdk}")
@@ -36,8 +36,17 @@ def main(sdk_path: str):
     app_build_dir = ROOT / "app" / "build"
     staging_dir = build_dir / "staging"
     deliverables_dir = ROOT / "deliverables"
+    if experimental_hd540:
+        build_dir = ROOT / "build" / "hd540"
+        app_build_dir = build_dir / "app"
+        staging_dir = build_dir / "staging"
+        deliverables_dir = build_dir / "deliverables"
+    helper = (ROOT / "build/hd540/plugin/vsh_240p.sprx") if experimental_hd540 else (ROOT / "plugin/vsh_240p.sprx")
+    version = "01.68" if experimental_hd540 else APP_VERSION
+    if not helper.exists():
+        raise FileNotFoundError(f"Build the matching helper first: {helper}")
 
-    build_dir.mkdir(exist_ok=True)
+    build_dir.mkdir(parents=True, exist_ok=True)
     staging_dir.mkdir(parents=True, exist_ok=True)
     deliverables_dir.mkdir(exist_ok=True)
 
@@ -59,7 +68,8 @@ def main(sdk_path: str):
     print("\n=== [1/5] Building PPU Executable with CMake ===")
     toolchain_cmake = sdk / "cmake" / "ps3-ppu-toolchain.cmake"
     run("cmake", "-S", ROOT / "app", "-B", app_build_dir, "-G", "Ninja",
-        f"-DCMAKE_TOOLCHAIN_FILE={toolchain_cmake}")
+        f"-DCMAKE_TOOLCHAIN_FILE={toolchain_cmake}",
+        f"-DCRT_ENABLE_HD540={'ON' if experimental_hd540 else 'OFF'}")
     run("cmake", "--build", app_build_dir, "--target", "ps3-240p-app")
 
     elf_file = app_build_dir / "ps3-240p-app.elf"
@@ -88,20 +98,20 @@ def main(sdk_path: str):
     sfo_tool = sdk / "bin" / "sfo.exe"
     sfo_xml = sdk / "bin" / "sfo.xml"
     run(sfo_tool, "--title", TITLE, "--appid", APP_ID, "-f", sfo_xml, sfo_dst)
-    run(sfo_tool, "set", sfo_dst, f"APP_VER={APP_VERSION}", "--out", sfo_dst)
+    run(sfo_tool, "set", sfo_dst, f"APP_VER={version}", "--out", sfo_dst)
     run(sfo_tool, "validate", sfo_dst)
 
     # Copy Icon & Extras
     if icon_src.exists():
         shutil.copyfile(icon_src, icon_dst)
     shutil.copyfile(ROOT / "app" / "BuzzBridge-LICENSE", usr_dir / "BuzzBridge-LICENSE.txt")
-    shutil.copyfile(ROOT / "plugin" / "vsh_240p.sprx", usr_dir / "vsh_240p.sprx")
+    shutil.copyfile(helper, usr_dir / "vsh_240p.sprx")
 
     # 5. Build and Finalize PKG
     print("\n=== [5/5] Building & Finalizing PS3 PKG ===")
     pkg_tool = sdk / "bin" / "pkg.exe"
     finalize_tool = sdk / "bin" / "package_finalize.exe"
-    out_pkg = deliverables_dir / "CRT-Toolset.pkg"
+    out_pkg = deliverables_dir / ("CRT-Toolset-1.5.0-dev19.pkg" if experimental_hd540 else "CRT-Toolset.pkg")
 
     run(pkg_tool, "--contentid", CONTENT_ID, f"{staging_dir}/", out_pkg)
     run(finalize_tool, out_pkg)
@@ -136,8 +146,9 @@ def main(sdk_path: str):
         "title": TITLE,
         "content_id": CONTENT_ID,
         "app_id": APP_ID,
-        "app_version": APP_VERSION,
-        "validation": "Proportional 240p/288p typography with non-overlapping line spacing and CRT overscan margins",
+        "app_version": version,
+        "experimental_hd540": experimental_hd540,
+        "validation": "Host/package checks only; experimental HDMI 540p waveform and recovery unverified" if experimental_hd540 else "Proportional 240p/288p typography with non-overlapping line spacing and CRT overscan margins",
         "package": out_pkg.name,
         "size_bytes": pkg_size,
         "sha256": pkg_sha,
@@ -164,5 +175,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Build PS3 240p Application PKG")
     parser.add_argument("--sdk", default=os.environ.get("PS3DK", r"E:\tools\ps3dk\ps3-sdk-v0.26.0-windows-x86_64"),
                         help="Path to PS3DK root directory")
+    parser.add_argument("--experimental-hd540", action="store_true",
+                        help="Build a separate development package under build/hd540 without replacing release assets")
     args = parser.parse_args()
-    main(args.sdk)
+    main(args.sdk, args.experimental_hd540)
