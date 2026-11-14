@@ -26,7 +26,7 @@ CRT setup. [Release notes](docs/RELEASE_v1.4.3.md) and
 | Native PS3 homebrew application (EBOOT.BIN / PS3-240P.pkg) | 10% | `████████░░` 80.0% |
 | Hardware waveform verification (line count, sync, 15.7 kHz) | 5% | `░░░░░░░░░░` 0% |
 
-_Last update: 2026-11-14. CLAIMED: owner reports v1.4.4-rc1 works on CRT. PROVEN: exact installed package verified for SD PID compatibility prerelease; external CECH-2004A result remains UNKNOWN (docs/RELEASE_v1.4.4-rc1.md)._
+_Last update: 2026-11-14. PROVEN: v1.4.4-rc1 SD PID compatibility prerelease published; downloaded PKG/manifest/checksums match local assets. CLAIMED: owner CRT test works. External CECH-2004A result remains UNKNOWN (docs/RELEASE_v1.4.4-rc1.md)._
 <!-- progress:end -->
 
 The progress block is generated from `docs/progress.json`; percentages estimate work, not electrical verification.

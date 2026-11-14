@@ -1,6 +1,6 @@
 {
   "updated": "2026-11-14",
-  "note": "CLAIMED: owner reports v1.4.4-rc1 works on CRT. PROVEN: exact installed package verified for SD PID compatibility prerelease; external CECH-2004A result remains UNKNOWN (docs/RELEASE_v1.4.4-rc1.md).",
+  "note": "PROVEN: v1.4.4-rc1 SD PID compatibility prerelease published; downloaded PKG/manifest/checksums match local assets. CLAIMED: owner CRT test works. External CECH-2004A result remains UNKNOWN (docs/RELEASE_v1.4.4-rc1.md).",
   "stages": [
     {
       "name": "Static analysis & claim verification (hypercalls, netemu, RSX attr 0x100)",
