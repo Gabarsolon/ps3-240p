@@ -54,6 +54,12 @@ def make_block(data, pct):
     rows = ['| Stage | Weight | Done |', '|---|---:|---|']
     for s in data['stages']:
         rows.append(f"| {s['name']} | {s['weight']}% | `{text_bar(s['done'], 10)}` {s['done']}% |")
+    workstreams = data.get('workstreams', [])
+    if workstreams:
+        rows += ['', 'Current feature status (separate from the weighted research estimate):', '',
+                 '| Feature | Status / remaining work | Evidence |', '|---|---|---|']
+        for item in workstreams:
+            rows.append(f"| {item['name']} | {item['status']} | {item['evidence']} |")
     lines = [
         START,
         '## Progress',

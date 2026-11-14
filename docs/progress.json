@@ -1,6 +1,33 @@
 {
   "updated": "2026-11-14",
-  "note": "PROVEN: v1.4.4-rc1 SD PID compatibility prerelease published; downloaded PKG/manifest/checksums match local assets. CLAIMED: owner CRT test works. External CECH-2004A result remains UNKNOWN (docs/RELEASE_v1.4.4-rc1.md).",
+  "note": "PROVEN offline: retail 4.93 has existing 1280x768, 1280x1024 and 1920x1200 raster/metadata/clock entries and matching HDMI descriptions; roadmap and current feature table added. GameOS activation and live PC-mode compatibility remain UNKNOWN (docs/DISPLAY_PRESETS_INVESTIGATION.md).",
+  "workstreams": [
+    {
+      "name": "240p / 288p and analog gamma",
+      "status": "Released; owner reports success. Wider connector/game coverage and electrical waveform measurement remain open.",
+      "evidence": "[Release and calibration notes](docs/CRT_CALIBRATION.md); [SD results](docs/RELEASE_v1.4.4-rc1.md)"
+    },
+    {
+      "name": "Sysmgr PID compatibility",
+      "status": "PROVEN: checked discovery implemented and v1.4.4-rc1 published. CLAIMED: owner CRT test works. UNKNOWN: external CECH-2004A result.",
+      "evidence": "[PID investigation](docs/SYSMGR_DISCOVERY.md)"
+    },
+    {
+      "name": "HDMI 540p",
+      "status": "PROVEN: full XMB picture and receiver-reported progressive output in timed dev19 test. UNKNOWN: HD CRT, component and game compatibility; no permanent enforcement.",
+      "evidence": "[540p prerelease](docs/RELEASE_v1.5.0-dev19.md)"
+    },
+    {
+      "name": "Resolution presets and scaling",
+      "status": "Investigation started: existing PC-mode paths, aspect and placement controls. No new preset tested or released.",
+      "evidence": "[Roadmap](docs/DISPLAY_PRESETS_ROADMAP.md)"
+    },
+    {
+      "name": "Community compatibility and measurements",
+      "status": "Open: PS1 mode transitions, integer scaling, input lag, component, PS2/BC models and Mega Man 9/10.",
+      "evidence": "[Tracked requests](docs/DISPLAY_PRESETS_ROADMAP.md#other-community-requests-to-track)"
+    }
+  ],
   "stages": [
     {
       "name": "Static analysis & claim verification (hypercalls, netemu, RSX attr 0x100)",
