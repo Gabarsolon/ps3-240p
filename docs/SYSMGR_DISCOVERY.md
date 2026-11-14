@@ -88,6 +88,14 @@ and the RC test applied no timing patches or saved video defaults. XMB was
 visible afterward. Evidence: ignored `local_only/pid-fix/owner-test.json`
 and `restored-xmb.png`.
 
+**PROVEN (subsequent owner-requested installation for CRT testing):** the
+complete RC package contents and both helper copies were installed with
+checked backups. All six installed files were compared byte-for-byte, then
+checked again by SHA-256 after one normal soft reboot. The old resident
+helper was absent afterward. The app was left for the owner to open and
+test on their CRT; no analog timing test was initiated remotely. Evidence:
+ignored `local_only/pid-fix/install-crt/deployment.json`.
+
 **UNKNOWN:** the RC app's visual result on the owner's HDMI capture: the
 virtual-camera feed was black while the app was open, despite responsive
 input and completed frame/log activity. It returned to a visible XMB on
