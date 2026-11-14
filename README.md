@@ -26,10 +26,20 @@ CRT setup. [Release notes](docs/RELEASE_v1.4.3.md) and
 | Native PS3 homebrew application (EBOOT.BIN / PS3-240P.pkg) | 10% | `████████░░` 80.0% |
 | Hardware waveform verification (line count, sync, 15.7 kHz) | 5% | `░░░░░░░░░░` 0% |
 
-_Last update: 2026-11-14. PROVEN: SD v1.4.4-rc1 installed on owner PS3 with checked backups; all package/global-helper files verified after soft reboot and old resident helper cleared. Owner CRT test and external CECH-2004A result pending (docs/SYSMGR_DISCOVERY.md)._
+_Last update: 2026-11-14. CLAIMED: owner reports v1.4.4-rc1 works on CRT. PROVEN: exact installed package verified for SD PID compatibility prerelease; external CECH-2004A result remains UNKNOWN (docs/RELEASE_v1.4.4-rc1.md)._
 <!-- progress:end -->
 
 The progress block is generated from `docs/progress.json`; percentages estimate work, not electrical verification.
+
+## SD PID compatibility prerelease
+
+[v1.4.4-rc1](https://github.com/Gabarsolon/ps3-240p/releases/tag/v1.4.4-rc1)
+targets the v1.4.3 "sysmgr PID 10 not found" error.
+**PROVEN (source/tests):** timing and gamma use checked service discovery
+across 32 slots. **CLAIMED (owner):** the RC works on their CRT.
+**UNKNOWN:** success on the external CECH-2004A that reported the error.
+[Install/test steps and evidence](docs/RELEASE_v1.4.4-rc1.md).
+This SD build excludes experimental 540p; stable v1.4.3 remains available.
 
 ## Experimental HDMI 540p prerelease
 

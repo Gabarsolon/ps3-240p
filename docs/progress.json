@@ -1,6 +1,6 @@
 {
   "updated": "2026-11-14",
-  "note": "PROVEN: SD v1.4.4-rc1 installed on owner PS3 with checked backups; all package/global-helper files verified after soft reboot and old resident helper cleared. Owner CRT test and external CECH-2004A result pending (docs/SYSMGR_DISCOVERY.md).",
+  "note": "CLAIMED: owner reports v1.4.4-rc1 works on CRT. PROVEN: exact installed package verified for SD PID compatibility prerelease; external CECH-2004A result remains UNKNOWN (docs/RELEASE_v1.4.4-rc1.md).",
   "stages": [
     {
       "name": "Static analysis & claim verification (hypercalls, netemu, RSX attr 0x100)",

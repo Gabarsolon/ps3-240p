@@ -96,11 +96,18 @@ helper was absent afterward. The app was left for the owner to open and
 test on their CRT; no analog timing test was initiated remotely. Evidence:
 ignored `local_only/pid-fix/install-crt/deployment.json`.
 
-**UNKNOWN:** the RC app's visual result on the owner's HDMI capture: the
+**CLAIMED (owner, 2026-11-14):** after that installation for CRT testing,
+the owner reported: "I've tested it and it works." Source: owner's message
+requesting a prerelease for the external tester. This confirms their reported
+CRT result only; the message does not enumerate individual timing, enforcement
+or gamma checks and does not establish external CECH-2004A compatibility.
+
+**UNKNOWN:** the earlier RC app's visual result on the owner's HDMI capture: the
 virtual-camera feed was black while the app was open, despite responsive
 input and completed frame/log activity. It returned to a visible XMB on
-normal exit. This run validates native lookup, not the RC's visual output
-or analog 240p/288p operation. No inference about a console freeze is made.
+normal exit. That run validated native lookup, not analog output; the later
+owner CRT report above is separate evidence. No inference about a console
+freeze is made, and HDMI behavior remains unverified.
 
 **UNKNOWN:** whether the CECH-2004A report was actually caused by a shifted
 PID, and whether this RC resolves it. There is no test result from that
@@ -132,4 +139,4 @@ python tools/build_ps3_app.py --pid-compatibility
 255568 bytes, SHA-256
 `e35062e49bdb6a3cb785442c49d5e8e855389d44d92590fd2bfa3aba5614165e`.
 Source: package builder's decrypted-member verification and manifest in
-that directory. It is a local test build, not a published stable release.
+that directory. This is a compatibility candidate, not a stable release.
