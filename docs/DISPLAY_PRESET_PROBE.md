@@ -1,7 +1,8 @@
 # Native HDMI PC preset probe
 
 Checkpoint: 2026-11-14. **Experimental developer probe, not a released app
-menu or permanent preset.** It uses existing retail VSH display interfaces;
+menu or permanent preset. The later dev1 menu results are tracked in
+[the PC preset checkpoint](PC_PRESETS_DEVELOPMENT.md).** It uses existing retail VSH display interfaces;
 it does not patch LV1 timing tables or contain Sony instruction listings.
 See [roadmap](DISPLAY_PRESETS_ROADMAP.md) and
 [offline evidence](DISPLAY_PRESETS_INVESTIGATION.md).

@@ -6,6 +6,7 @@ import struct
 import sys
 import tempfile
 import unittest
+from unittest.mock import Mock, patch
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'tools'))
 import display_probe_test as probe
@@ -37,6 +38,19 @@ class ProbePublicationTests(unittest.TestCase):
             raise FileNotFoundError(path)
         c.read=read;c.preflight=lambda:None
         return c
+    def test_read_reconnects_once_without_repeating_a_mutation(self):
+        c=probe.DisplayConsole.__new__(probe.DisplayConsole);c.host="test"
+        old=Mock();old.retrbinary.side_effect=ConnectionRefusedError("data socket")
+        fresh=Mock();fresh.retrbinary.side_effect=lambda command,write:write(b"complete")
+        c.ftp=old
+        with patch.object(probe.ftplib,"FTP",return_value=fresh):
+            self.assertEqual(c.read("/test"),b"complete")
+        old.close.assert_called_once();fresh.login.assert_called_once()
+        old.storbinary.assert_not_called();fresh.storbinary.assert_not_called();fresh.rename.assert_not_called()
+        fresh.retrbinary.side_effect=EOFError("lost")
+        with patch.object(probe.ftplib,"FTP",return_value=fresh):
+            with self.assertRaises(EOFError):c.read("/test")
+
     def test_acknowledged_inbox_preserved_before_replacement(self):
         with tempfile.TemporaryDirectory() as tmp:
             c=self.console(tmp);old=c.read(probe.REQUEST);seq=c.publish(2)

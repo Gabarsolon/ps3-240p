@@ -27,7 +27,7 @@ def sha256_file(path: Path) -> str:
             h.update(chunk)
     return h.hexdigest()
 
-def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False):
+def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, display_presets=False):
     sdk = Path(sdk_path).resolve()
     if not sdk.exists():
         raise FileNotFoundError(f"PS3DK SDK not found at {sdk}")
@@ -36,8 +36,8 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False):
     app_build_dir = ROOT / "app" / "build"
     staging_dir = build_dir / "staging"
     deliverables_dir = ROOT / "deliverables"
-    if experimental_hd540 or pid_compatibility:
-        build_dir = ROOT / "build" / ("hd540" if experimental_hd540 else "pid-compat")
+    if experimental_hd540 or pid_compatibility or display_presets:
+        build_dir = ROOT / "build" / ("hd540" if experimental_hd540 else "display-presets" if display_presets else "pid-compat")
         app_build_dir = build_dir / "app"
         staging_dir = build_dir / "staging"
         deliverables_dir = build_dir / "deliverables"
@@ -46,6 +46,12 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False):
     if pid_compatibility:
         helper = ROOT / "build/pid-compat/plugin/vsh_240p.sprx"
         version = "01.44"
+    if display_presets:
+        helper = ROOT / "build/pid-compat/plugin/vsh_240p.sprx"
+        version = "01.70"
+        probe = ROOT / "build/display-probe/plugin/vsh_240p.sprx"
+        if not probe.exists():
+            raise FileNotFoundError(f"Build the matching preset helper first: {probe}")
     if not helper.exists():
         raise FileNotFoundError(f"Build the matching helper first: {helper}")
 
@@ -73,7 +79,8 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False):
     run("cmake", "-S", ROOT / "app", "-B", app_build_dir, "-G", "Ninja",
         f"-DCMAKE_TOOLCHAIN_FILE={toolchain_cmake}",
         f"-DCRT_ENABLE_HD540={'ON' if experimental_hd540 else 'OFF'}",
-        f"-DCRT_APP_VERSION={'1.4.4-rc1' if pid_compatibility else ''}")
+        f"-DCRT_APP_VERSION={'1.6.0-dev1' if display_presets else '1.4.4-rc1' if pid_compatibility else ''}",
+        f"-DCRT_ENABLE_PRESETS={'ON' if display_presets else 'OFF'}")
     run("cmake", "--build", app_build_dir, "--target", "ps3-240p-app")
 
     elf_file = app_build_dir / "ps3-240p-app.elf"
@@ -83,6 +90,9 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False):
     # 2. Prepare PKG Staging Hierarchy
     print("\n=== [2/5] Staging Package Directory Structure ===")
     if staging_dir.exists():
+        target = staging_dir.resolve()
+        if target.parent != build_dir.resolve() or ROOT.resolve() not in target.parents:
+            raise RuntimeError(f"Refusing staging cleanup outside this workspace: {target}")
         shutil.rmtree(staging_dir)
     usr_dir = staging_dir / "USRDIR"
     usr_dir.mkdir(parents=True, exist_ok=True)
@@ -110,6 +120,8 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False):
         shutil.copyfile(icon_src, icon_dst)
     shutil.copyfile(ROOT / "app" / "BuzzBridge-LICENSE", usr_dir / "BuzzBridge-LICENSE.txt")
     shutil.copyfile(helper, usr_dir / "vsh_240p.sprx")
+    if display_presets:
+        shutil.copyfile(probe, usr_dir / "crt_display_probe.sprx")
 
     # 5. Build and Finalize PKG
     print("\n=== [5/5] Building & Finalizing PS3 PKG ===")
@@ -118,6 +130,9 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False):
     out_pkg = deliverables_dir / ("CRT-Toolset-1.5.0-dev19.pkg" if experimental_hd540 else "CRT-Toolset.pkg")
     if pid_compatibility:
         out_pkg = deliverables_dir / "CRT-Toolset-1.4.4-rc1.pkg"
+
+    if display_presets:
+        out_pkg = deliverables_dir / "CRT-Toolset-1.6.0-dev1.pkg"
 
     run(pkg_tool, "--contentid", CONTENT_ID, f"{staging_dir}/", out_pkg)
     run(finalize_tool, out_pkg)
@@ -130,6 +145,8 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False):
     assert "ICON0.PNG" in packaged
     assert "USRDIR/BuzzBridge-LICENSE.txt" in packaged
     assert "USRDIR/vsh_240p.sprx" in packaged
+    if display_presets:
+        assert packaged["USRDIR/crt_display_probe.sprx"] == probe.read_bytes()
     for name, data in packaged.items():
         original = (staging_dir / name).read_bytes()
         if name == "USRDIR/EBOOT.BIN":
@@ -155,6 +172,7 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False):
         "app_version": version,
         "experimental_hd540": experimental_hd540,
         "pid_compatibility": pid_compatibility,
+        "display_presets": display_presets,
         "validation": "Host/package checks only; experimental HDMI 540p waveform and recovery unverified" if experimental_hd540 else "Proportional 240p/288p typography with non-overlapping line spacing and CRT overscan margins",
         "package": out_pkg.name,
         "size_bytes": pkg_size,
@@ -166,6 +184,9 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False):
     }
     if pid_compatibility:
         manifest["validation"] = "Bounded sysmgr discovery host/private-firmware checks; external CECH-2004A compatibility unverified"
+
+    if display_presets:
+        manifest["validation"] = "Timed native HDMI preset development build; verify menu and receiver behavior separately"
 
     manifest_path = deliverables_dir / "package_manifest.json"
     with open(manifest_path, "w", encoding="utf-8") as f:
@@ -189,5 +210,6 @@ if __name__ == "__main__":
                         help="Build a separate development package under build/hd540 without replacing release assets")
     variants.add_argument("--pid-compatibility", action="store_true",
                           help="Build SD-only v1.4.4-rc1 under build/pid-compat without replacing release assets")
+    variants.add_argument("--display-presets", action="store_true", help="Build isolated timed PC preset menu under build/display-presets")
     args = parser.parse_args()
-    main(args.sdk, args.experimental_hd540, args.pid_compatibility)
+    main(args.sdk, args.experimental_hd540, args.pid_compatibility, args.display_presets)

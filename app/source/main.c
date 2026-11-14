@@ -37,6 +37,9 @@
 #ifdef CRT_ENABLE_HD540
 #include "hd540_protocol.h"
 #endif
+#ifdef CRT_ENABLE_PRESETS
+#include "../../experiments/display_probe/service.h"
+#endif
 #ifndef CRT_BUILD_VERSION
 #ifdef CRT_ENABLE_HD540
 #define CRT_BUILD_VERSION "1.5.0-dev19"
@@ -793,6 +796,88 @@ static void hd_menu(void)
  }
 }
 #endif
+#ifdef CRT_ENABLE_PRESETS
+static int pc_pending;
+#define PC_HELPER "/dev_hdd0/game/PS240P001/USRDIR/crt_display_probe.sprx"
+static int pc_reply(dp_reply *reply)
+{
+ FILE *f=fopen(DPROBE_REPLY,"rb");if(!f)return -1;
+ unsigned char bytes[sizeof(*reply)+1];size_t n=fread(bytes,1,sizeof(bytes),f);int bad=ferror(f);fclose(f);
+ if(bad||n!=sizeof(*reply))return -1;memcpy(reply,bytes,sizeof(*reply));
+ return reply->magic==DPROBE_MAGIC&&reply->state<=DP_WAIT_APP?0:-1;
+}
+static int pc_helper(void)
+{
+ int source_size=0;uint64_t source=file_digest(PC_HELPER,&source_size);
+ if(source_size<=0)return -1;
+ unsigned resident=0,empty=0;char resident_path[256]={0};
+ for(unsigned slot=1;slot<=6;slot++){
+  char name[96]={0},path[256]={0};int rc=helper_info(0,slot,name,path);
+  if((uint32_t)rc==0x80010006u){if(!empty)empty=slot;continue;}
+  if(rc)return -1;
+  if(!strcmp(name,"vsh_240p"))return -1;
+  if(!strcmp(name,"crt_display_probe")){
+   if(resident)return -1;resident=slot;snprintf(resident_path,sizeof(resident_path),"%s",path);
+  }else if(!name[0]&&!path[0]&&!empty)empty=slot;
+ }
+ if(resident){
+  int size=0;uint64_t hash=file_digest(resident_path,&size);
+  if(deploy_needed(source_size,source,size,hash))return -1;
+ }else{
+  if(!empty)return -1;
+  clear_flag(DPROBE_READY);
+  if(load_vsh_plugin(empty,PC_HELPER))return -1;
+  char name[96]={0},path[256]={0};
+  if(helper_info(0,empty,name,path)||strcmp(name,"crt_display_probe")||strcmp(path,PC_HELPER))return -1;
+ }
+ uint64_t deadline=now()+5000000;
+ while(!flag_present(DPROBE_READY)&&now()<deadline&&!exiting){pump();usleep(50000);}
+ return flag_present(DPROBE_READY)?0:-1;
+}
+static void pc_run(unsigned profile)
+{
+ if(pc_pending){status("Preset recovery pending","Exit to XMB and wait for recovery before another display change.");return;}
+ if(read_video()||device.portType!=1||state.displayMode.resolution!=1||
+   state.displayMode.scanMode==VIDEO_SCANMODE_INTERLACE||!(state.displayMode.refreshRates&5u)||
+   (state.displayMode.refreshRates&2u)||flag_present(ENFORCER_FLAG)){
+  status("HDMI preset unavailable","Start at HDMI 1080p / 60-family output. Pause SD enforcement and reboot to clear old timing edits before testing PC presets.");return;
+ }
+ if(pc_helper()){status("Preset helper unavailable","A free plugin slot and the matching helper are required. Reboot to clear an older display helper before trying again.");return;}
+ dp_reply reply;int have=!pc_reply(&reply);
+ if(have&&reply.state!=DP_DONE&&reply.state!=DP_REFUSED){status("Preset test pending","Wait for automatic recovery. Do not start another display experiment.");return;}
+ FILE *f=fopen(DPROBE_REQUEST,"rb");
+ if(f){dp_request old;size_t n=fread(&old,1,sizeof(old),f);int extra=fgetc(f);int bad=ferror(f);fclose(f);
+  if(bad||n!=sizeof(old)||extra!=EOF||!have||old.magic!=DPROBE_MAGIC||old.sequence!=reply.sequence){status("Preset inbox busy","The previous request has not been acknowledged. No command was replaced.");return;}
+ }
+ static unsigned sequence;if(!sequence)sequence=(unsigned)now();if(!++sequence)++sequence;
+ gamma_request request={DPROBE_MAGIC,sequence,DP_AUTO,profile};int error=0;
+ if(gamma_publish(DPROBE_REQUEST,&request,&error)){status("Preset command failed","Could not publish the complete request. See the app log.");return;}
+ pc_pending=1;
+ app_log("PC preset queued profile=%u sequence=%u",profile,sequence);
+ uint64_t deadline=now()+3000000;
+ while(now()<deadline&&!exiting){
+  if(!pc_reply(&reply)&&reply.sequence==sequence){
+   if(reply.state==DP_WAIT_APP){app_log("PC helper acknowledged; exiting to XMB before switching");exiting=1;return;}
+   if(reply.state==DP_REFUSED||reply.state==DP_RECOVERY_FAILED)break;
+  }
+  pump();usleep(50000);
+ }
+ gamma_request cancel={DPROBE_MAGIC,sequence+1u?sequence+1u:1u,DP_CANCEL,1};
+ (void)gamma_publish(DPROBE_REQUEST,&cancel,&error);
+ status("Preset acknowledgement missing","Cancellation requested. No further test will start from this menu; check the helper log before retrying.");
+}
+static void pc_menu(void)
+{
+ const char *items[]={"Test 1280x768 / 5:3","Test 1280x1024 / 5:4","Test 1920x1200 / 16:10","Pause SD enforcement","Back"};int selected=0;
+ while(!exiting){
+  ui_view view={0};view.title="HDMI PC presets / 15-second tests\nRuns checks at XMB, then restores 1080p";
+  view.items=items;view.count=5;view.selected=selected;view.page=-1;
+  if(frame(&view))break;unsigned key=input();if(key&CIRCLE)break;
+  if(key&UP)selected=(selected+4)%5;if(key&DOWN)selected=(selected+1)%5;
+  if(key&CROSS){if(selected==4)break;if(selected==3){clear_flag(ENFORCER_FLAG);status("SD enforcement paused","Reboot to clear existing timing edits. Select HDMI 1080p before testing a PC preset.");}else pc_run((unsigned)selected+1);}
+ }
+}
+#endif
 static void diagnostics(void)
 {
  char text[1000];
@@ -964,6 +1049,9 @@ int main(void)
 #ifdef CRT_ENABLE_HD540
   "HD CRT / experimental 540p",
 #endif
+#ifdef CRT_ENABLE_PRESETS
+  "HDMI PC resolution presets",
+#endif
   "Exit to XMB"
  };
  const int item_count=(int)(sizeof(items)/sizeof(items[0]));
@@ -991,6 +1079,9 @@ int main(void)
   if(key&CIRCLE)break;
   if(key&UP)selected=(selected+item_count-1)%item_count;if(key&DOWN)selected=(selected+1)%item_count;
   if(key&CROSS){
+#ifdef CRT_ENABLE_PRESETS
+   if(pc_pending&&selected!=item_count-1){status("Preset recovery pending","Exit to XMB and wait for automatic restoration before another display change.");continue;}
+#endif
 #ifdef CRT_ENABLE_HD540
    if(hd_pending_sequence&&(selected<6||selected==8)){
     status("HD recovery pending","Wait for confirmed stock recovery or reboot before another timing/gamma change.");continue;
@@ -1008,6 +1099,9 @@ int main(void)
    else if(selected==9){int rc=inspect();status(rc?"Memory unavailable":"Memory checked",rc?patch.error:"All target records are recognized. No memory writes performed.");}
 #ifdef CRT_ENABLE_HD540
    else if(selected==10)hd_menu();
+#endif
+#ifdef CRT_ENABLE_PRESETS
+   else if(selected==10)pc_menu();
 #endif
    else break;
    next_memory_poll=0;

@@ -5,7 +5,8 @@ from pathlib import Path
 import struct
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -49,6 +50,24 @@ class AutomationTests(unittest.TestCase):
         c.read = read
         c.preflight = c.idle
         return c
+
+    def test_atomic_windows_frame_replacement_retries_brief_lock(self):
+        b=io.BytesIO();auto.Image.new("RGB",(16,16),(40,80,120)).save(b,format="JPEG")
+        capture=auto.Capture.__new__(auto.Capture)
+        capture.process=Mock();capture.process.poll.return_value=None
+        capture.latest=Mock();capture.latest.stat.return_value=SimpleNamespace(st_mtime=auto.time.time(),st_mtime_ns=123)
+        capture.latest.read_bytes.side_effect=[PermissionError("replacing"),b.getvalue()]
+        with tempfile.TemporaryDirectory() as tmp,patch.object(auto.time,"sleep"):
+            _,stamp=capture.frame(Path(tmp)/"proof.jpg")
+            self.assertEqual(stamp,123)
+            self.assertEqual(capture.latest.read_bytes.call_count,2)
+    def test_frame_lock_is_bounded(self):
+        capture=auto.Capture.__new__(auto.Capture)
+        capture.process=Mock();capture.process.poll.return_value=None
+        capture.latest=Mock();capture.latest.stat.side_effect=PermissionError("locked")
+        with patch.object(auto.time,"monotonic",side_effect=[0,2]):
+            with self.assertRaisesRegex(RuntimeError,"remains unavailable"):
+                capture.frame(Path("must-not-exist.jpg"))
 
     def test_pixels_do_not_call_flat_color_a_picture(self):
         for frame in (np.zeros((100, 100, 3)), np.full((100, 100, 3), 80)):

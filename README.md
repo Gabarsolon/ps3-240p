@@ -33,11 +33,11 @@ Current feature status (separate from the weighted research estimate):
 | 240p / 288p and analog gamma | Released; owner reports success. Wider connector/game coverage and electrical waveform measurement remain open. | [Release and calibration notes](docs/CRT_CALIBRATION.md); [SD results](docs/RELEASE_v1.4.4-rc1.md) |
 | Sysmgr PID compatibility | PROVEN in supplied external log: sysmgr PID 9 and all 54 targets resolved. CLAIMED: CECH-2004A 240p works; PS1 audio/crop issues remain open. | [PID investigation](docs/SYSMGR_DISCOVERY.md) |
 | HDMI 540p | PROVEN: full XMB picture and receiver-reported progressive output in timed dev19 test. UNKNOWN: HD CRT, component and game compatibility; no permanent enforcement. | [540p prerelease](docs/RELEASE_v1.5.0-dev19.md) |
-| Resolution presets and scaling | PROVEN on owner HDMI setup: native 1280x768, receiver-reported progressive, 15-second hold and stock restoration. Experimental helper; other modes, scaling controls, games and HEN untested. | [Native preset proof](docs/DISPLAY_PRESET_PROBE.md); [roadmap](docs/DISPLAY_PRESETS_ROADMAP.md) |
-| HEN diagnostic and port | PROVEN: isolated diagnostic builds pass offline checks; public-only package installed/launched on owner CFW and produced a report. Actual HEN runtime and ordinary-HEN 240p/288p remain unverified. | [Diagnostic and CFW smoke proof](docs/HEN_DIAGNOSTIC.md); [port requirements](docs/HEN_PORT_PLAN.md) |
+| Resolution presets and scaling | PROVEN on owner HDMI setup: native 1280x768, 1280x1024 and 1920x1200 timed tests with stock recovery; WUXGA verified with live receiver size/scan despite stale cache. Development menu installed; all three menu selections, clean-boot helper loading and exact recovery verified; games, scaling controls and HEN untested. | [PC preset development](docs/PC_PRESETS_DEVELOPMENT.md); [roadmap](docs/DISPLAY_PRESETS_ROADMAP.md) |
+| HEN diagnostic and port | PROVEN: diagnostic builds and public-only CFW smoke pass. Additional native/gamma/mapping paths inspected offline; no ordinary-HEN 240p/288p route established. Actual HEN runtime untested. | [Alternative paths](docs/HEN_ALTERNATIVE_PATHS.md); [diagnostic scope](docs/HEN_DIAGNOSTIC.md) |
 | Community compatibility and measurements | Open: reported PS1 audio/crop, mode transitions, integer scaling, input lag, component, PS2/BC models and Mega Man 9/10. | [PS1 report](docs/PS1_AUDIO_REPORT.md); [tracked requests](docs/DISPLAY_PRESETS_ROADMAP.md#other-community-requests-to-track) |
 
-_Last update: 2026-11-14. PROVEN: native 1280x768 HDMI passed timed capture/receiver/restoration checks; public-only HEN diagnostic control installed through webMAN and ran on CFW. Actual HEN runtime remains untested. Supplied RC log confirms sysmgr PID 9; PS1 audio/crop issue remains open. See docs/DISPLAY_PRESET_PROBE.md, docs/HEN_DIAGNOSTIC.md and docs/PS1_AUDIO_REPORT.md._
+_Last update: 2026-11-14. PROVEN: native HDMI 1280x768/1280x1024/1920x1200 outputs and all three dev1 menu tests recover stock; clean-boot helper loading passes. Live WUXGA dimensions resolve stale cached 1080p. Further HEN research found no complete ordinary-HEN low-line route; actual HEN runtime remains untested._
 <!-- progress:end -->
 
 The progress block is generated from `docs/progress.json`; percentages estimate work, not electrical verification.
@@ -64,6 +64,20 @@ HD CRT/component compatibility and game coverage remain **UNKNOWN**;
 the HD test currently accepts HDMI only. It does not keep 540p permanently.
 [Install steps, required checks and tester feedback](docs/RELEASE_v1.5.0-dev19.md).
 Stable v1.4.3 remains the normal release.
+
+## Experimental HDMI PC presets
+
+**PROVEN (owner-console capture/logs):** the native VSH path now selects
+1280x768 (5:3), 1280x1024 (5:4) and 1920x1200 (16:10), with 15-second tests
+and exact stock recovery. Live receiver dimensions confirmed WUXGA despite
+a stale cached 1080p report. The isolated `1.6.0-dev1` build adds a preset
+menu and restores 1080p automatically; no permanent setting is saved.
+[Build scope, evidence and limits](docs/PC_PRESETS_DEVELOPMENT.md).
+
+These modes convert normal 720p/1080p rendering sources. Games, geometry
+accuracy, custom 4:3 timings, scaling controls, component and HEN remain
+**UNKNOWN**. This development build is separate from the stable and 540p
+release artifacts.
 
 ## v1.4.3: native analog gamma
 

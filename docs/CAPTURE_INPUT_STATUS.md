@@ -86,3 +86,27 @@ visible after loss of lock.
 Together these observations support the upstream scan-flag interpretation
 on this board for these two modes; they do not validate other firmware or
 refresh-rate measurements. See [dev9 live result](HD540_DEV9.md).
+
+## One-shot live dimensions
+
+**PROVEN (implementation):** `--timing-once --json` reads the live scan byte
+and two dimension words (`0xe184`, `0xe18c`) once. It retains the cached
+fields and adds `live_reported_width`, `live_reported_field_height` and
+`live_reported_height`; the upstream interlaced interpretation doubles a
+field height. Unknown scan values do not establish signal presence.
+It cannot run with `--watch` or `--scan-once`. No firmware patch, RAM write
+or executable call is sent. Source: `tools/capture_input_status.py`,
+`tests/test_capture_input_status.py`.
+
+**CLAIMED (upstream):** live-register reads can disrupt the capture device;
+use this only as a separate sparse diagnostic, not continuous polling.
+The dimension locations and field interpretation come from
+[the upstream live-status reader](https://github.com/FOSDEM/video-ms213x-status/blob/main/status.go).
+The exact firmware mapping and physical refresh remain **UNKNOWN**.
+
+**PROVEN (owner-console observation, 2026-11-14):** the native WUXGA test
+returned live 1920 x 1200 and scan byte 0x07 while cached fields remained
+1920 x 1080. This resolves the cached-size mismatch for this test; it does
+not turn the cached location into a reliable live timing measurement.
+Evidence: ignored `local_only/display_presets/automatic/20261114-191322/wuxga.json`;
+[full preset checkpoint](PC_PRESETS_DEVELOPMENT.md).

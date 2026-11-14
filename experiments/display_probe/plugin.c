@@ -39,7 +39,7 @@ static void poll(void)
  }
  dp_reply reply;
  if(dp_tick(&service,dp_native_ops(),sys_time_get_system_time(),&q,&reply)){
-  log_line("sequence",reply.sequence);log_line("kind",service.kind);
+  log_line("sequence",reply.sequence);log_line("kind",service.kind);log_line("preset",service.profile);
   log_line("state",reply.state);log_line("detail",reply.detail);publish(&reply);
  }
 }
@@ -47,7 +47,7 @@ static void worker(void *u)
 {
  (void)u;
  (void)sysLv2FsOpen(DPROBE_LOG,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&log_fd,0666,0,0);
- log_line("display_probe_v1_start",0);dp_native_log(log_line);
+ log_line("display_probe_v2_start",0);dp_native_log(log_line);
  (void)sysLv2FsUnlink(DPROBE_REQUEST);(void)sysLv2FsUnlink(DPROBE_REPLY);
  int ready=-1;
  if(!sysLv2FsOpen(DPROBE_READY,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&ready,0666,0,0))sysLv2FsClose(ready);

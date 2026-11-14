@@ -49,6 +49,12 @@ Research project: native 240p/288p analog output on a PS3 (CFW Evilnat 4.93 + Co
   alone may describe one 1080i field. Scan raw 0x0f/0x07 has an upstream
   interlaced/progressive interpretation; exact firmware mapping and refresh
   remain unvalidated. A configured OBS capture size is not input timing.
+  A cached size can remain stale even with visible video: the WUXGA test
+  reported cached 1920x1080 but live 1920x1200. Use
+  `--timing-once --json` only for a separate, sparse diagnostic: it reads
+  live scan plus two dimension words and may interrupt the USB capture.
+  It cannot be combined with `--watch`. Preserve both cached/live fields.
+  See `docs/PC_PRESETS_DEVELOPMENT.md` and `docs/CAPTURE_INPUT_STATUS.md`.
 - For deployments, exit the app normally, ensure no experiment is active,
   back up affected files, stage and read back complete replacements, and
   verify hashes. The owner explicitly reaffirmed webMAN PKG installation

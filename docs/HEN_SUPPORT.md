@@ -1,5 +1,9 @@
 # CFW and HEN compatibility
 
+The later [native video, gamma and mapping investigation](HEN_ALTERNATIVE_PATHS.md)
+found no complete ordinary-HEN low-line route. Native PC presets are a
+separate possible feature, with actual HEN execution still untested.
+
 See the [concrete HEN port plan](HEN_PORT_PLAN.md) for the 2026-11-14 review,
 capability separation, diagnostic requirements and hardware-assisted scope.
 **PROVEN (upstream source):** this HEN revision's LV1 peek helper invokes a

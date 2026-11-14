@@ -20,10 +20,10 @@ from urllib.request import urlopen
 from hd540_auto_test import Capture, parse_slots
 
 ROOT=Path(__file__).resolve().parents[1]
-MAGIC=0x44535031
+MAGIC=0x44535032
 BASE="/dev_hdd0/tmp/crt_display_probe"
-REQUEST,REPLY,READY=BASE+".request",BASE+".reply",BASE+".v1.ready"
-ACTIONS={"inspect":1,"stock":2,"caps":3,"wxga":4}
+REQUEST,REPLY,READY=BASE+".request",BASE+".reply",BASE+".v2.ready"
+ACTIONS={"inspect":1,"stock":2,"caps":3,"wxga":4,"sxga":4,"wuxga":4}
 TERMINAL={5,6,7}
 
 
@@ -33,18 +33,25 @@ class DisplayConsole:
         self.ftp=ftplib.FTP(host,timeout=6);self.ftp.login();self.pending=None
 
     def read(self,path,optional=False):
-        out=io.BytesIO()
-        try:self.ftp.retrbinary("RETR "+path,out.write)
-        except ftplib.error_perm as error:
-            if optional and str(error).startswith("550"):return None
-            raise
-        return out.getvalue()
+        for attempt in range(2):
+            out=io.BytesIO()
+            try:
+                self.ftp.retrbinary("RETR "+path,out.write)
+                return out.getvalue()
+            except ftplib.error_perm as error:
+                if optional and str(error).startswith("550"):return None
+                raise
+            except (OSError,EOFError,ftplib.error_temp):
+                if attempt:raise
+                # Retry only a read, never STOR/rename or an uncertain command.
+                self.ftp.close()
+                self.ftp=ftplib.FTP(self.host,timeout=6);self.ftp.login()
 
     def reply(self):
         data=self.read(REPLY,True)
         if not data or len(data)!=16:return None
         magic,sequence,state,detail=struct.unpack(">4I",data)
-        if magic!=MAGIC or state>7:raise RuntimeError("Unknown display-probe ABI")
+        if magic!=MAGIC or state>8:raise RuntimeError("Unknown display-probe ABI")
         return dict(sequence=sequence,state=state,detail=detail)
 
     def preflight(self):
@@ -61,7 +68,7 @@ class DisplayConsole:
         local=ROOT/"build/display-probe/plugin/vsh_240p.sprx"
         if self.read(BASE+".sprx")!=local.read_bytes():raise RuntimeError("Probe file identity mismatch")
 
-    def publish(self,action,cancel=False):
+    def publish(self,action,cancel=False,profile=1):
         if not cancel:self.preflight()
         old=self.read(REQUEST,True);reply=self.reply()
         if old and not cancel:
@@ -69,7 +76,7 @@ class DisplayConsole:
                 raise RuntimeError("Previous inbox unacknowledged; no replacement")
         sequence=secrets.randbelow(0xfffffffe)+1
         if old and len(old)==16 and sequence==struct.unpack(">4I",old)[1]:sequence=sequence%0xffffffff+1
-        data=struct.pack(">4I",MAGIC,sequence,action,1)
+        data=struct.pack(">4I",MAGIC,sequence,action,profile)
         stage=f"{REQUEST}.{sequence}.stage";backup=f"{REQUEST}.{sequence}.prev"
         if self.read(stage,True) is not None or self.read(backup,True) is not None:raise RuntimeError("Staging conflict")
         self.ftp.storbinary("STOR "+stage,io.BytesIO(data))
@@ -110,16 +117,18 @@ class DisplayConsole:
     def close(self):self.ftp.close()
 
 
-def receiver(scan=False):
+def receiver(scan=False,timing=False):
     command=[sys.executable,"-B",str(ROOT/"tools/capture_input_status.py"),"--json"]
-    if scan:command.append("--scan-once")
+    if timing:command.append("--timing-once")
+    elif scan:command.append("--scan-once")
     result=subprocess.run(command,capture_output=True,text=True,encoding="utf-8",timeout=6)
     if result.returncode:raise RuntimeError("Receiver status unavailable: "+result.stderr.strip())
     return json.loads(result.stdout)
 
 
-def run_test(console,capture,name,folder,baseline,scan):
-    sequence=console.publish(ACTIONS[name]);print(f"{name}: sequence {sequence}",flush=True)
+def run_test(console,capture,name,folder,baseline,scan,selected="wxga",timing=False):
+    profile={"sxga":2,"wuxga":3}.get(selected if name=="caps" else name,1)
+    sequence=console.publish(ACTIONS[name],profile=profile);print(f"{name}: sequence {sequence}",flush=True)
     result={"name":name,"sequence":sequence,"frames":[],"refresh_hz":None,"geometry_review":"pending"}
     start=time.monotonic();active_start=None;last_state=None;stamp=None
     while time.monotonic()-start<55:
@@ -133,8 +142,8 @@ def run_test(console,capture,name,folder,baseline,scan):
             if state==3:
                 if active_start is None:active_start=time.monotonic()
                 if "receiver" not in result and time.monotonic()-active_start>=7:
-                    result["receiver"]=receiver(scan and name=="wxga")
-                    result["live_scan_query_may_disturb_capture"]=bool(scan and name=="wxga")
+                    result["receiver"]=receiver(scan and name in ("wxga","sxga","wuxga"),timing and name in ("wxga","sxga","wuxga"))
+                    result["live_scan_query_may_disturb_capture"]=bool((scan or timing) and name in ("wxga","sxga","wuxga"))
             if state in TERMINAL:
                 result.update(reply)
                 if state!=7:console.pending=None
@@ -149,9 +158,11 @@ def run_test(console,capture,name,folder,baseline,scan):
     active=[r for r in result["frames"] if r["state"]==3]
     mature=[r for r in active if r["elapsed"]>=active[0]["elapsed"]+4] if active else []
     result["active_picture_fraction"]=sum(r["picture_detected"] for r in mature)/len(mature) if mature else 0
-    expected=(1280,720) if name=="stock" else (1280,768) if name=="wxga" else (baseline["reported_width"],baseline["reported_height"])
+    expected=(1280,720) if name=="stock" else {"wxga":(1280,768),"sxga":(1280,1024),"wuxga":(1920,1200)}[name] if name in ("wxga","sxga","wuxga") else (baseline["reported_width"],baseline["reported_height"])
     actual=result.get("receiver",{})
     result["receiver_matches"]=name=="inspect" or (actual.get("reported_width"),actual.get("reported_height"))==expected and actual.get("reported_signal_present") is True
+    if timing and name in ("wxga","sxga","wuxga"):
+        result["receiver_matches"]=(actual.get("live_reported_width"),actual.get("live_reported_height"))==expected and actual.get("live_reported_signal_present") is True
     returned=result["restored_receiver"]
     result["receiver_restored"]=(returned["reported_width"],returned["reported_height"] )==(baseline["reported_width"],baseline["reported_height"]) and returned["reported_signal_present"]
     result["passed"]=bool(result["state"]==5 and result["detail"]==0 and result["recovery_picture_detected"] and result["receiver_restored"] and result["receiver_matches"] and (name=="inspect" or len(mature)>=3 and result["active_picture_fraction"]>=.8))
@@ -164,6 +175,8 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host",default="192.168.0.169")
     parser.add_argument("--action",choices=[*ACTIONS,"all"],default="inspect")
+    parser.add_argument("--profile",choices=["wxga","sxga","wuxga"],default="wxga",help="Target for caps/all")
+    parser.add_argument("--timing-candidate",action="store_true",help="Separate diagnostic: one potentially disruptive live input dimension/scan sample")
     parser.add_argument("--scan-candidate",action="store_true",help="One possibly disruptive live scan query during WXGA; separate from undisturbed validation")
     args=parser.parse_args();folder=ROOT/"local_only/display_presets/automatic"/datetime.now().strftime("%Y%m%d-%H%M%S")
     folder.mkdir(parents=True);report={"time":datetime.now(timezone.utc).isoformat(),"tests":[],"status":"starting"}
@@ -174,9 +187,9 @@ def main():
         if not stats["picture_detected"]:raise RuntimeError("Baseline picture absent/flat")
         baseline=receiver();report["baseline_receiver"]=baseline
         if not baseline["reported_signal_present"]:raise RuntimeError("Baseline input signal absent")
-        actions=list(ACTIONS) if args.action=="all" else [args.action]
+        actions=["inspect","stock","caps",args.profile] if args.action=="all" else [args.action]
         for name in actions:
-            result=run_test(console,capture,name,folder,baseline,args.scan_candidate);report["tests"].append(result)
+            result=run_test(console,capture,name,folder,baseline,args.scan_candidate,args.profile,args.timing_candidate);report["tests"].append(result)
             if not result["passed"]:raise RuntimeError(name+" failed; sequence stopped after recovery")
         report["status"]="passed_helper_picture_and_receiver_checks"
     except (Exception,KeyboardInterrupt) as error:

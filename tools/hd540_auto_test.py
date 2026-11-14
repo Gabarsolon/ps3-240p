@@ -88,10 +88,20 @@ class Capture:
     def frame(self, destination):
         if self.process.poll() is not None:
             raise RuntimeError("OBS recorder stopped; see ffmpeg.log")
-        before = self.latest.stat()
+        deadline = time.monotonic() + 1
+        while True:
+            try:
+                before = self.latest.stat()
+                data = self.latest.read_bytes()
+                break
+            except (PermissionError, FileNotFoundError):
+                # Windows can briefly deny a read while FFmpeg atomically
+                # replaces the JPEG. This does not indicate a lost signal.
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("OBS frame remains unavailable; stopping tests")
+                time.sleep(.025)
         if time.time() - before.st_mtime > 3:
             raise RuntimeError("OBS frame is stale; stopping tests")
-        data = self.latest.read_bytes()
         with Image.open(io.BytesIO(data)) as im:
             rgb = np.asarray(im.convert("RGB"))
         destination.write_bytes(data)

@@ -33,6 +33,12 @@ static uint64_t clock_now(void *u){(void)u;
 static vsh_video_state saved,source,last;
 static uint32_t manager,objects[2],masks[2],debug_saved;
 static unsigned dirty[2],debug_dirty;static int observed;
+static unsigned profile=1;
+static uint32_t profile_mask(void){return 0x80000000u>>profile;}
+static unsigned monitor(void){return 10+profile;}
+static unsigned source_mode(void){return profile==3?12:11;}
+static unsigned source_resolution(void){return profile==3?1:2;}
+static unsigned source_width(void){return profile==3?1920:1280;}
 static int (*device_info)(unsigned,unsigned,void *);
 static int (*update_display)(unsigned,uint32_t,uint32_t,uint32_t,uint32_t,void *,int);
 static int (*map_display)(uint32_t *,uint32_t *,int,int,unsigned);
@@ -80,13 +86,13 @@ static int masks_at(int candidate)
  if(pointers()){note("device_pointer_mismatch",candidate);return -1;}
  for(unsigned i=0;i<2;i++){
   uint32_t m;if(mask_read(i,&m))return -1;
-  if(m!=(candidate?0x40000000:masks[i])){note(i?"analog_mask_mismatch":"hdmi_mask_mismatch",m);return 0;}
+  if(m!=(candidate?profile_mask():masks[i])){note(i?"analog_mask_mismatch":"hdmi_mask_mismatch",m);return 0;}
  }
  uint32_t d;if(read32(0x70f13c,&d))return -1;
  /* VSH configuration bridge 0xc825c consumes this one-shot flag. Only the
   * verified converted target may accept the acknowledged original value. */
  if(candidate==2&&d==debug_saved)return 1;
- if(d!=(candidate?11:debug_saved)){note("debug_monitor_mismatch",d);return 0;}return 1;
+ if(d!=(candidate?monitor():debug_saved)){note("debug_monitor_mismatch",d);return 0;}return 1;
 }
 static void device_dump(void)
 {
@@ -110,11 +116,13 @@ static int query(vsh_video_state *s)
  }
  return 0;
 }
-static int prepare(void *u)
+static int prepare(void *u,unsigned selected)
 {
  (void)u;
+ if(selected<1||selected>3)return fail("unsupported_preset");
  if(dirty[0]||dirty[1]||debug_dirty)return fail("previous_caps_recovery_pending");
  if(flag("/dev_hdd0/tmp/240p_app.active")||flag("/dev_hdd0/tmp/240p_enforcer.on"))return fail("app_or_sd_enforcement_active");
+ profile=selected;note("preset",profile);
  if(vsh_video_bind()||identities())return fail("unsupported_native_display_identity");
  uint32_t export=vsh_video_export("xsetting",0x4712f276),table,descriptor,code;
  if(!export)return fail("display_interface_missing");
@@ -141,7 +149,12 @@ static int prepare(void *u)
 #endif
  /* The native conversion byte is an internal enum (observed stock value 6),
   * not the public API's conversion NONE=0. Preserve it exactly on return. */
- if(query(&saved)||saved.state||saved.mode!=12||saved.raw[8]!=1||saved.raw[9]!=2||saved.raw[10]!=6||
+ if(query(&saved))return fail("display_query_failed");
+ /* The enabled flag can precede XMB reacquiring its own display buffers.
+  * This fingerprinted 4.93 backend uses format 5 / pitch 8192 at XMB 1080p;
+  * our app's pitch 7680 is not a restorable VSH baseline after app teardown. */
+ if(saved.state||saved.format!=5||saved.pitch!=8192)return 1;
+ if(saved.mode!=12||saved.raw[8]!=1||saved.raw[9]!=2||saved.raw[10]!=6||
    (saved.flags&0xff)!=5||(saved.flags&0xf00)==0xf00||(saved.flags&0x20000)||
    saved.pitch<1920*4||saved.pitch>=32768||(saved.pitch&7))return fail("start_single_stock_hdmi_1080p_60");
  if(read32(0x738bf4,&manager)||manager<0x10000||manager>0x7fffff00||
@@ -162,37 +175,37 @@ static int submit_flags(const vsh_video_state *s,uint32_t flags,unsigned mode)
  int pc=(flags&0xff)==0x10;
  /* VSH mapper 0xc7080 deliberately selects category 0x10 for its PC
   * conversion path, even when its device-info port is HDMI. Accept only
-  * the exact native WXGA/60 mapping from our owned 720-line source. */
- if(pc&&(s!=&source||mode!=11||(flags&0x003fc000u)!=0x40000||masks_at(1)!=1))return fail("unsupported_pc_mapping");
- if((mode!=11&&mode!=saved.mode)||(!pc&&(flags&0xff)!=5)||(flags&0xf00)==0xf00||
-    s->format!=saved.format||s->pitch<1280*4||s->pitch>=32768||(s->pitch&7))return fail("unsupported_source_contract");
+  * the exact native PC/60 mapping from our owned 720/1080-line source. */
+ if(pc&&(s!=&source||mode!=source_mode()||(flags&0x003fc000u)!=0x40000||masks_at(1)!=1))return fail("unsupported_pc_mapping");
+ if((mode!=source_mode()&&mode!=saved.mode)||(!pc&&(flags&0xff)!=5)||(flags&0xf00)==0xf00||
+    s->format!=saved.format||s->pitch<source_width()*4||s->pitch>=32768||(s->pitch&7))return fail("unsupported_source_contract");
  int rc=update_display(0,flags|0x10000000u,mode,s->format,s->pitch,0,1);
  note("submit_rc",(unsigned)rc);return rc;
 }
 static int submit(const vsh_video_state *s,unsigned mode){return submit_flags(s,s->flags,mode);}
-static int stock(void *u){(void)u;return submit(&saved,11);}
+static int stock(void *u){(void)u;return profile==3?0:submit(&saved,11);}
 static int at_stock(void *u)
 {
  (void)u;vsh_video_state s;if(query(&s))return -1;
- int ok=!s.state&&s.raw[8]==2&&s.raw[9]==2&&s.mode==11&&(s.flags&0xff)==5&&s.pitch>=1280*4&&s.pitch<32768&&!(s.pitch&7);
+ int ok=!s.state&&s.raw[8]==source_resolution()&&s.raw[9]==2&&s.mode==source_mode()&&(s.flags&0xff)==5&&s.pitch>=source_width()*4&&s.pitch<32768&&!(s.pitch&7);
  if(ok)source=s;return ok;
 }
 static int caps(void *u)
 {
  (void)u;if(pointers()||identities()||masks_at(0)!=1)return fail("caps_changed_before_apply");
  for(unsigned i=0;i<2;i++){
-  dirty[i]=1;int rc=i?analog_caps(objects[i],0x40000000):hdmi_caps(objects[i],0x40000000,0);
+  dirty[i]=1;int rc=i?analog_caps(objects[i],profile_mask()):hdmi_caps(objects[i],profile_mask(),0);
   note(i?"analog_caps_rc":"hdmi_caps_rc",(unsigned)rc);if(rc)return -1;
  }
- debug_dirty=1;int rc=global_monitor(11);note("global_monitor_rc",(unsigned)rc);
+ debug_dirty=1;int rc=global_monitor(monitor());note("global_monitor_rc",(unsigned)rc);
  device_dump();return rc||masks_at(1)!=1?-1:0;
 }
 static int candidate(void *u)
 {
  if(caps(u))return -1;
- uint32_t flags=0,mode=0;int rc=map_display(&flags,&mode,2,2,0);
+ uint32_t flags=0,mode=0;int rc=map_display(&flags,&mode,(int)source_resolution(),2,0);
  note("pc_mapper_rc",(unsigned)rc);note("pc_mapper_flags",flags);note("pc_mapper_mode",mode);
- if(rc<=0||(flags&0xff)!=0x10||mode!=11||(flags&0x003fc000u)!=0x40000)return fail("unexpected_native_pc_mapping");
+ if(rc<=0||(flags&0xff)!=0x10||mode!=source_mode()||(flags&0x003fc000u)!=0x40000)return fail("unexpected_native_pc_mapping");
  /* Preserve the current RGB/color-depth selection, as normal VSH does. */
  flags=(flags&~0x0fc00000u)|(source.flags&0x0fc00000u);
  return submit_flags(&source,flags,mode);
@@ -203,8 +216,8 @@ static int at_target(void *u,unsigned kind)
  vsh_video_state s;if(query(&s))return -1;
  if(s.state!=0)return 0;
  if(kind==DP_CAPS){int match=masks_at(1);return match<0?-1:match&&s.mode==saved.mode;}
- if(s.mode!=11||s.raw[8]!=2||s.raw[9]!=2||s.raw[10]!=1||(s.flags&0xff)!=0x10||
-    s.pitch<1280*4||s.pitch>=32768||(s.pitch&7))return 0;
+ if(s.mode!=source_mode()||s.raw[8]!=source_resolution()||s.raw[9]!=2||s.raw[10]!=profile||(s.flags&0xff)!=0x10||
+    s.pitch<source_width()*4||s.pitch>=32768||(s.pitch&7))return 0;
  return masks_at(2);
 }
 static int restore(void *u)
@@ -212,7 +225,7 @@ static int restore(void *u)
  (void)u;int error=0;
  if(pointers()||identities())return fail("restore_identity_changed");
  for(unsigned i=0;i<2;i++)if(dirty[i]){
-  uint32_t m;if(mask_read(i,&m)|| (m!=masks[i]&&m!=0x40000000u)){error=1;continue;}
+  uint32_t m;if(mask_read(i,&m)|| (m!=masks[i]&&m!=profile_mask())){error=1;continue;}
   if(m!=masks[i]){
    int rc=i?analog_caps(objects[i],masks[i]):hdmi_caps(objects[i],masks[i],0);
    note(i?"restore_analog_rc":"restore_hdmi_rc",(unsigned)rc);
@@ -220,7 +233,7 @@ static int restore(void *u)
   if(mask_read(i,&m)||m!=masks[i])error=1;else dirty[i]=0;
  }
  if(debug_dirty){
-  uint32_t d;if(read32(0x70f13c,&d)||(d!=11&&d!=debug_saved))error=1;
+  uint32_t d;if(read32(0x70f13c,&d)||(d!=monitor()&&d!=debug_saved))error=1;
   else{if(d!=debug_saved)(void)global_monitor(debug_saved);if(read32(0x70f13c,&d)||d!=debug_saved)error=1;else debug_dirty=0;}
  }
  int rc=submit(&saved,saved.mode);return rc||error?-1:0;
@@ -233,7 +246,8 @@ static int at_original(void *u)
   ((memcmp(s.raw+8,saved.raw+8,8)!=0)<<5);
  note("original_check",mismatch);return !mismatch;
 }
+static int app_active(void *u){(void)u;return flag("/dev_hdd0/tmp/240p_app.active");}
 const dp_ops *dp_native_ops(void)
 {
- static const dp_ops ops={prepare,stock,caps,candidate,at_stock,at_target,restore,at_original,clock_now,0};return &ops;
+ static const dp_ops ops={prepare,stock,caps,candidate,at_stock,at_target,restore,at_original,clock_now,app_active,0};return &ops;
 }

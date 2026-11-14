@@ -1,6 +1,6 @@
 {
   "updated": "2026-11-14",
-  "note": "PROVEN: native 1280x768 HDMI passed timed capture/receiver/restoration checks; public-only HEN diagnostic control installed through webMAN and ran on CFW. Actual HEN runtime remains untested. Supplied RC log confirms sysmgr PID 9; PS1 audio/crop issue remains open. See docs/DISPLAY_PRESET_PROBE.md, docs/HEN_DIAGNOSTIC.md and docs/PS1_AUDIO_REPORT.md.",
+  "note": "PROVEN: native HDMI 1280x768/1280x1024/1920x1200 outputs and all three dev1 menu tests recover stock; clean-boot helper loading passes. Live WUXGA dimensions resolve stale cached 1080p. Further HEN research found no complete ordinary-HEN low-line route; actual HEN runtime remains untested.",
   "workstreams": [
     {
       "name": "240p / 288p and analog gamma",
@@ -19,13 +19,13 @@
     },
     {
       "name": "Resolution presets and scaling",
-      "status": "PROVEN on owner HDMI setup: native 1280x768, receiver-reported progressive, 15-second hold and stock restoration. Experimental helper; other modes, scaling controls, games and HEN untested.",
-      "evidence": "[Native preset proof](docs/DISPLAY_PRESET_PROBE.md); [roadmap](docs/DISPLAY_PRESETS_ROADMAP.md)"
+      "status": "PROVEN on owner HDMI setup: native 1280x768, 1280x1024 and 1920x1200 timed tests with stock recovery; WUXGA verified with live receiver size/scan despite stale cache. Development menu installed; all three menu selections, clean-boot helper loading and exact recovery verified; games, scaling controls and HEN untested.",
+      "evidence": "[PC preset development](docs/PC_PRESETS_DEVELOPMENT.md); [roadmap](docs/DISPLAY_PRESETS_ROADMAP.md)"
     },
     {
       "name": "HEN diagnostic and port",
-      "status": "PROVEN: isolated diagnostic builds pass offline checks; public-only package installed/launched on owner CFW and produced a report. Actual HEN runtime and ordinary-HEN 240p/288p remain unverified.",
-      "evidence": "[Diagnostic and CFW smoke proof](docs/HEN_DIAGNOSTIC.md); [port requirements](docs/HEN_PORT_PLAN.md)"
+      "status": "PROVEN: diagnostic builds and public-only CFW smoke pass. Additional native/gamma/mapping paths inspected offline; no ordinary-HEN 240p/288p route established. Actual HEN runtime untested.",
+      "evidence": "[Alternative paths](docs/HEN_ALTERNATIVE_PATHS.md); [diagnostic scope](docs/HEN_DIAGNOSTIC.md)"
     },
     {
       "name": "Community compatibility and measurements",

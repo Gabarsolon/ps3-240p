@@ -31,13 +31,13 @@ int dp_mock_identity(uint32_t at,unsigned n,uint64_t h){assert(at&&n&&h);return 
 uint32_t dp_mock_table(void){return 0x100000;}
 int dp_mock_info(unsigned a,unsigned b,void *out){assert(!a&&!b);memset(out,0,0x1cc);return 0;}
 int dp_mock_map(uint32_t *flags,uint32_t *mode,int res,int asp,unsigned refresh)
-{assert(res==2&&asp==2&&!refresh);*flags=0x40210;*mode=11;return map_error?-1:2;}
+{assert(res==(debug_type==13?1:2)&&asp==2&&!refresh);*flags=0x40210;*mode=debug_type==13?12:11;return map_error?-1:2;}
 int dp_mock_update(unsigned a,uint32_t flags,uint32_t mode,uint32_t fmt,uint32_t pitch,void *option,int wait)
 {
  assert(!a&&!option&&wait==1);assert(flags&0x10000000u);assert(mode==11||mode==12);
- assert(fmt==7&&(pitch==8192||pitch==5120));updates++;current.mode=mode;current.pitch=mode==11?5120:8192;
+ assert(fmt==5&&(pitch==8192||pitch==5120));updates++;current.mode=mode;current.pitch=mode==11?5120:8192;
  current.flags=flags&~0x10000000u;current.raw[8]=mode==11?2:1;current.raw[9]=2;
- current.raw[10]=(flags&0xff)==0x10?1:6;
+ current.raw[10]=(flags&0xff)==0x10?(masks[0]==0x40000000u?1:masks[0]==0x20000000u?2:3):6;
  if((flags&0xff)==0x10)debug_type=0; /* Native configuration consumes its request flag. */
  return 0;
 }
@@ -46,32 +46,42 @@ int dp_mock_analog(uint32_t p,uint32_t m){assert(p==objects[1]);masks[1]=m;write
 int dp_mock_global(uint32_t d){debug_type=d;writes++;return 0;}
 static void reset(void)
 {
- memset(&current,0,sizeof(current));current.mode=12;current.flags=0x1010205;current.format=7;current.pitch=8192;
+ memset(&current,0,sizeof(current));current.mode=12;current.flags=0x1010205;current.format=5;current.pitch=8192;
  current.raw[8]=1;current.raw[9]=2;current.raw[10]=6;current.raw[11]=2;
  masks[0]=0x6068;masks[1]=0x101;debug_type=0;manager=0x20000000;objects[0]=0x20001000;objects[1]=0x20002000;
  writes=updates=0;blocked=identity_error=partial_failure=map_error=0;
 }
 int main(void)
 {
- const dp_ops *o=dp_native_ops();reset();assert(!o->prepare(0));assert(!writes&&!updates);
+ const dp_ops *o=dp_native_ops();reset();assert(!o->prepare(0,1));assert(!writes&&!updates);
  assert(!o->stock(0)&&updates==1&&o->at_stock(0)==1);
  assert(!o->candidate(0)&&updates==2&&writes==3&&masks[0]==0x40000000&&debug_type==0);
  assert((current.flags&0x003fc0ff)==0x40010);
  assert(o->at_target(0,DP_WXGA)==1);
  assert(!o->restore(0)&&o->at_original(0)==1&&masks[0]==0x6068&&masks[1]==0x101&&debug_type==0);
+ for(unsigned preset=2;preset<=3;preset++){
+  reset();assert(!o->prepare(0,preset));assert(!o->stock(0)&&o->at_stock(0)==1);
+  assert(!o->candidate(0)&&o->at_target(0,DP_WXGA)==1);
+  assert(current.raw[10]==preset&&masks[0]==(0x80000000u>>preset));
+  assert(!o->restore(0)&&o->at_original(0)==1&&masks[0]==0x6068&&masks[1]==0x101);
+ }
+ reset();assert(o->prepare(0,4)==-1&&!writes&&!updates);
  /* Failed second setter mutates first: undo exact nonzero defaults, not zero. */
- reset();assert(!o->prepare(0));partial_failure=1;assert(o->caps(0)==-1&&writes==2);
+ reset();assert(!o->prepare(0,1));partial_failure=1;assert(o->caps(0)==-1&&writes==2);
  assert(!o->restore(0)&&o->at_original(0)==1&&masks[0]==0x6068&&masks[1]==0x101);
- reset();assert(!o->prepare(0));assert(!o->stock(0)&&o->at_stock(0)==1);map_error=1;
+ reset();assert(!o->prepare(0,1));assert(!o->stock(0)&&o->at_stock(0)==1);map_error=1;
  assert(o->candidate(0)==-1&&updates==1);assert(!o->restore(0)&&o->at_original(0)==1);
- reset();blocked=1;assert(o->prepare(0)==-1&&!writes&&!updates);
- reset();identity_error=1;assert(o->prepare(0)==-1&&!writes&&!updates);
- reset();current.flags=0x1010202;assert(o->prepare(0)==-1&&!writes&&!updates);
- reset();current.raw[9]=1;assert(o->prepare(0)==-1&&!writes&&!updates);
- reset();debug_type=11;assert(o->prepare(0)==-1&&!writes&&!updates);
+ reset();current.pitch=7680;assert(o->prepare(0,1)==1&&!writes&&!updates);
+ reset();current.format=7;assert(o->prepare(0,1)==1&&!writes&&!updates);
+ reset();current.state=2;assert(o->prepare(0,1)==1&&!writes&&!updates);
+ reset();blocked=1;assert(o->prepare(0,1)==-1&&!writes&&!updates);
+ reset();identity_error=1;assert(o->prepare(0,1)==-1&&!writes&&!updates);
+ reset();current.flags=0x1010202;assert(o->prepare(0,1)==-1&&!writes&&!updates);
+ reset();current.raw[9]=1;assert(o->prepare(0,1)==-1&&!writes&&!updates);
+ reset();debug_type=11;assert(o->prepare(0,1)==-1&&!writes&&!updates);
  /* External ownership changes must prevent native writes. */
- reset();assert(!o->prepare(0));manager+=0x100;assert(o->caps(0)==-1&&!writes&&!updates);
- reset();assert(!o->prepare(0));masks[0]^=1;assert(o->caps(0)==-1&&!writes&&!updates);
+ reset();assert(!o->prepare(0,1));manager+=0x100;assert(o->caps(0)==-1&&!writes&&!updates);
+ reset();assert(!o->prepare(0,1));masks[0]^=1;assert(o->caps(0)==-1&&!writes&&!updates);
  puts("PASS: native display source bounds, exact nonzero capability rollback, partial native failure, connector/scan/debug/identity refusal and ownership checks");
  return 0;
 }
