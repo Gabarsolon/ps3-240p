@@ -26,7 +26,7 @@ CRT setup. [Release notes](docs/RELEASE_v1.4.3.md) and
 | Native PS3 homebrew application (EBOOT.BIN / PS3-240P.pkg) | 10% | `████████░░` 80.0% |
 | Hardware waveform verification (line count, sync, 15.7 kHz) | 5% | `░░░░░░░░░░` 0% |
 
-_Last update: 2026-11-14. PROVEN: dev19 owner repeat held 540p candidate 15.453232 seconds and restored stock 1080i with error 0; CLAIMED owner confirms picture works. Exact tested 308560-byte package prepared for v1.5.0-dev19 HDMI-only prerelease, with documented per-boot checks and component/HD CRT/game limits._
+_Last update: 2026-11-14. PROVEN: v1.5.0-dev19 HDMI 540p prerelease published with exact owner-tested package and verified downloadable SHA-256. Source/tag pushed; v1.4.3 remains latest stable. CLAIMED owner confirms 540p works; HD CRT/component/game coverage remains UNKNOWN._
 <!-- progress:end -->
 
 The progress block is generated from `docs/progress.json`; percentages estimate work, not electrical verification.
