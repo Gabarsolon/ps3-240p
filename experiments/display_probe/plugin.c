@@ -47,7 +47,7 @@ static void worker(void *u)
 {
  (void)u;
  (void)sysLv2FsOpen(DPROBE_LOG,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&log_fd,0666,0,0);
- log_line("display_probe_v2_start",0);dp_native_log(log_line);
+ log_line(DPROBE_START,0);dp_native_log(log_line);
  (void)sysLv2FsUnlink(DPROBE_REQUEST);(void)sysLv2FsUnlink(DPROBE_REPLY);
  int ready=-1;
  if(!sysLv2FsOpen(DPROBE_READY,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&ready,0666,0,0))sysLv2FsClose(ready);
@@ -63,7 +63,7 @@ static void worker(void *u)
 static void __attribute__((noinline)) start_worker(void)
 {
  (void)sysLv2FsUnlink(DPROBE_READY);atomic_store(&running,1);
- if(sysThreadCreate(&thread,worker,0,1100,65536,THREAD_JOINABLE,"crt_display_probe"))atomic_store(&running,0);
+ if(sysThreadCreate(&thread,worker,0,1100,65536,THREAD_JOINABLE,DPROBE_MODULE))atomic_store(&running,0);
 }
 int module_start(size_t args,void *data){(void)args;(void)data;start_worker();exit_thread();}
 int module_stop(size_t args,void *data)

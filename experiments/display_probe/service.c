@@ -38,7 +38,7 @@ int dp_tick(dp_service *s,const dp_ops *o,uint64_t now,const dp_request *q,dp_re
    else recover(s,o,now,DP_CANCELLED);
   }else if(!dp_busy(s)&&!s->halted){
    s->sequence=q->sequence;s->detail=0;s->kind=q->action;s->profile=q->value;s->automatic=0;
-   if(q->value<1||q->value>3||((q->action==DP_INSPECT||q->action==DP_STOCK720)&&q->value!=1)||
+   if(q->value<1||q->value>DPROBE_PROFILES||((q->action==DP_INSPECT||q->action==DP_STOCK720)&&q->value!=1)||
      q->action<DP_INSPECT||q->action>DP_AUTO||q->action==DP_CANCEL){s->state=DP_REFUSED;s->detail=DP_BAD_REQUEST;}
    else if(q->action==DP_AUTO){s->automatic=1;s->state=DP_WAIT_APP;s->app_settle=0;s->deadline=fresh(o,now)+20*SECOND;}
    else if(q->action==DP_WXGA&&(s->controls&(1u|(1u<<q->value)))!=(1u|(1u<<q->value))){s->state=DP_REFUSED;s->detail=DP_PREREQUISITE;}

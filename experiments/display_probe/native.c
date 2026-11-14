@@ -1,6 +1,32 @@
-/* SPDX-License-Identifier: MIT. No direct stores to VSH/LV1/MMIO/flash. */
+/* SPDX-License-Identifier: MIT. Native VSH interfaces; optional checked CFW RAM
+ * experiments. No direct MMIO, flash, boot or encoder programming. */
 #include "native.h"
 #include "../../plugin/vsh_video.h"
+#ifdef CRT_XGA_PROBE
+#include "xga_patch.h"
+#include "xga_source.h"
+#include "../../app/source/hd540_cache.h"
+#include <ppu-lv2.h>
+#include <sys/process.h>
+static patch_context xga_transport;
+static xga_patch xga;
+static hd540_cache xga_cache;
+static xga_source xga_source_patch;
+static uint64_t xga_read(void *u,uint64_t a){(void)u;lv2syscall3(8,0x7777,0x1008,a);return_to_user_prog(uint64_t);}
+static void xga_write(void *u,uint64_t a,uint64_t v){(void)u;lv2syscall4(8,0x7777,0x1009,a,v);}
+static int source_read(void *u,uint32_t at,uint64_t *value)
+{(void)u;return vsh_video_copy(at,value,8);}
+static int process_store(uint32_t at,uint64_t *value)
+{uint32_t pid=(uint32_t)sysProcessGetPid();lv2syscall6(8,0x7777,0x0032,pid,at,(uint64_t)(uintptr_t)value,8);return_to_user_prog(int);}
+static int source_write(void *u,uint32_t at,uint64_t value)
+{
+ (void)u;int rc=process_store(at,&value);
+ /* VSH helper and the edited function use the same effective mapping.
+  * PS3MAPI copies the word; refresh its executable cache line locally. */
+ __asm__ volatile("dcbst 0,%0; sync; icbi 0,%0; sync; isync"::"r"((uint64_t)at):"memory");
+ return rc;
+}
+#endif
 #ifndef DP_NATIVE_HOST_TEST
 #include <sys/file.h>
 #include <sys/sys_time.h>
@@ -34,11 +60,12 @@ static vsh_video_state saved,source,last;
 static uint32_t manager,objects[2],masks[2],debug_saved;
 static unsigned dirty[2],debug_dirty;static int observed;
 static unsigned profile=1;
-static uint32_t profile_mask(void){return 0x80000000u>>profile;}
-static unsigned monitor(void){return 10+profile;}
-static unsigned source_mode(void){return profile==3?12:11;}
-static unsigned source_resolution(void){return profile==3?1:2;}
-static unsigned source_width(void){return profile==3?1920:1280;}
+static uint32_t profile_mask(void){return profile>=4?0x40000000u:0x80000000u>>profile;}
+static unsigned monitor(void){return profile>=4?11:10+profile;}
+static unsigned conversion(void){return profile>=4?1:profile;}
+static unsigned source_mode(void){return profile==9?11:profile>=7?4:profile==3?12:11;}
+static unsigned source_resolution(void){return profile==9?2:profile>=7?4:profile==3?1:2;}
+static unsigned source_width(void){return profile==9?1024:profile>=7?720:profile==3?1920:1280;}
 static int (*device_info)(unsigned,unsigned,void *);
 static int (*update_display)(unsigned,uint32_t,uint32_t,uint32_t,uint32_t,void *,int);
 static int (*map_display)(uint32_t *,uint32_t *,int,int,unsigned);
@@ -119,7 +146,7 @@ static int query(vsh_video_state *s)
 static int prepare(void *u,unsigned selected)
 {
  (void)u;
- if(selected<1||selected>3)return fail("unsupported_preset");
+ if(selected<1||selected>DPROBE_PROFILES)return fail("unsupported_preset");
  if(dirty[0]||dirty[1]||debug_dirty)return fail("previous_caps_recovery_pending");
  if(flag("/dev_hdd0/tmp/240p_app.active")||flag("/dev_hdd0/tmp/240p_enforcer.on"))return fail("app_or_sd_enforcement_active");
  profile=selected;note("preset",profile);
@@ -167,7 +194,21 @@ static int prepare(void *u,unsigned selected)
   note(i?"saved_analog_mask":"saved_hdmi_mask",masks[i]);
  }
  if(read32(0x70f13c,&debug_saved)||debug_saved)return fail("existing_debug_monitor_override");
- note("saved_debug_monitor",debug_saved);device_dump();return 0;
+ note("saved_debug_monitor",debug_saved);device_dump();
+#ifdef CRT_XGA_PROBE
+ if(profile>=4){
+  if(xga.dirty||xga_cache.dirty||xga_source_patch.dirty)return fail("xga_recovery_pending");
+  memset(&xga_transport,0,sizeof(xga_transport));xga_transport.read=xga_read;xga_transport.write=xga_write;
+  if(patch_resolve(&xga_transport)||xga_patch_resolve(&xga,&xga_transport,profile-4))return fail(xga.ready?"xga_source_mismatch":"xga_snapshot_unavailable");
+  if(profile>=5&&hd540_cache_resolve(&xga_cache,&xga_transport))return fail("xga_cache_identity_mismatch");
+  if(profile==9)xga_cache.normalize_source=1;
+  if(profile>=7){
+   int rc=profile==9?xga_source_resolve_native(&xga_source_patch,source_read,source_write,0):xga_source_resolve(&xga_source_patch,source_read,source_write,0);
+   if(rc)return fail("xga_vsh_source_identity_mismatch");
+  }
+ }
+#endif
+ return 0;
 }
 static int submit_flags(const vsh_video_state *s,uint32_t flags,unsigned mode)
 {
@@ -183,10 +224,15 @@ static int submit_flags(const vsh_video_state *s,uint32_t flags,unsigned mode)
  note("submit_rc",(unsigned)rc);return rc;
 }
 static int submit(const vsh_video_state *s,unsigned mode){return submit_flags(s,s->flags,mode);}
-static int stock(void *u){(void)u;return profile==3?0:submit(&saved,11);}
+static int stock(void *u){(void)u;return profile==3||profile==9?0:submit(&saved,source_mode());}
 static int at_stock(void *u)
 {
  (void)u;vsh_video_state s;if(query(&s))return -1;
+ if(profile==9){
+  int match=!s.state&&s.mode==saved.mode&&s.format==saved.format&&s.pitch==saved.pitch&&
+   !((s.flags^saved.flags)&~0x10000000u)&&!memcmp(s.raw+8,saved.raw+8,8);
+  if(match)source=s;return match;
+ }
  int ok=!s.state&&s.raw[8]==source_resolution()&&s.raw[9]==2&&s.mode==source_mode()&&(s.flags&0xff)==5&&s.pitch>=source_width()*4&&s.pitch<32768&&!(s.pitch&7);
  if(ok)source=s;return ok;
 }
@@ -203,11 +249,23 @@ static int caps(void *u)
 static int candidate(void *u)
 {
  if(caps(u))return -1;
- uint32_t flags=0,mode=0;int rc=map_display(&flags,&mode,(int)source_resolution(),2,0);
+ /* The audited PC mapper supplies the existing WXGA output flags. The
+  * 480p-source experiment retains its independently observed mode4 source;
+  * it does not invent another output clock or alter the source allocation. */
+ uint32_t flags=0,mode=0;int rc=map_display(&flags,&mode,profile>=7?2:(int)source_resolution(),2,0);
  note("pc_mapper_rc",(unsigned)rc);note("pc_mapper_flags",flags);note("pc_mapper_mode",mode);
- if(rc<=0||(flags&0xff)!=0x10||mode!=source_mode()||(flags&0x003fc000u)!=0x40000)return fail("unexpected_native_pc_mapping");
+ if(rc<=0||(flags&0xff)!=0x10||mode!=(profile>=7?11:source_mode())||(flags&0x003fc000u)!=0x40000)return fail("unexpected_native_pc_mapping");
+ if(profile>=7){mode=source_mode();note(profile==9?"xga_native_source_experiment":"xga_480_source_experiment",mode);}
  /* Preserve the current RGB/color-depth selection, as normal VSH does. */
  flags=(flags&~0x0fc00000u)|(source.flags&0x0fc00000u);
+#ifdef CRT_XGA_PROBE
+ if(profile>=7){
+  if(xga_source_apply(&xga_source_patch))return fail("xga_vsh_source_apply_failed");
+  note("xga_vsh_source_patched",profile==9?0x430944:0x430864);
+ }
+ if(profile>=5&&hd540_cache_apply(&xga_cache))return fail("xga_cache_attachment_failed");
+ if(profile>=4&&xga_patch_apply(&xga))return fail("xga_apply_failed");
+#endif
  return submit_flags(&source,flags,mode);
 }
 static int at_target(void *u,unsigned kind)
@@ -216,13 +274,48 @@ static int at_target(void *u,unsigned kind)
  vsh_video_state s;if(query(&s))return -1;
  if(s.state!=0)return 0;
  if(kind==DP_CAPS){int match=masks_at(1);return match<0?-1:match&&s.mode==saved.mode;}
- if(s.mode!=source_mode()||s.raw[8]!=source_resolution()||s.raw[9]!=2||s.raw[10]!=profile||(s.flags&0xff)!=0x10||
+ if(s.mode!=source_mode()||(s.raw[8]!=source_resolution()&&!(profile>=7&&s.raw[8]==2))||s.raw[9]!=2||s.raw[10]!=conversion()||(s.flags&0xff)!=0x10||
     s.pitch<source_width()*4||s.pitch>=32768||(s.pitch&7))return 0;
+#ifdef CRT_XGA_PROBE
+ if(profile>=4){
+  patch_cached_video v;if(patch_read_cached_video(&xga_transport,&v))return -1;
+  note("xga_cache_vid",v.head[0].vid);note("xga_cache_horizontal",(unsigned)(v.head[0].raster[0]>>32)+1);
+  if(profile>=5){
+   uint32_t trace[HD540_CACHE_SAMPLES];int rc=hd540_cache_snapshot(&xga_cache,trace);if(rc<=0)return rc;
+   static const char *const names[]={"xga_callbacks","xga_callback_busy","xga_fp_control","xga_fp_scale","xga_hstart","xga_hend","xga_callback_rc","xga_ystep","xga_vstart","xga_vend","xga_xstep","xga_input_width","xga_packet_count","xga_packet_length","xga_packet_head","xga_packet_vid","xga_packet_width","xga_packet_height","xga_packet_pitch","xga_packet_format","xga_packet_normalized","xga_packet_restored"};
+   for(unsigned i=0;i<HD540_CACHE_SAMPLES;i++)note(names[i],trace[i]);
+   if(xga_patch_cache(&xga,1)!=1)return 0;
+   if(profile==9){
+    if(!trace[0]||trace[6]||(trace[2]&0x300)!=0x100||
+       (trace[4]&0xffff)||(trace[5]&0xffff)!=1023||
+       (trace[8]&0xffff)||(trace[9]&0xffff)!=767||
+       (trace[11]&0x1fff)!=1023||trace[20]!=1||trace[21]!=1)return fail("xga_native_geometry_readback_mismatch");
+    return masks_at(2);
+   }
+   int aspect=profile==6||profile==8;
+   uint32_t xs=profile>=7?0x0b400000u:0x14000000u;
+   uint32_t ys=profile>=7?(aspect?0x0d550000u:0x0a000000u):(aspect?0x14000000u:0x0f000000u);
+   if(!trace[0]||trace[6]|| (trace[2]&0x300) || (trace[3]&0x55)!=0x15 ||
+      (trace[4]&0xffff)!=0 || (trace[5]&0xffff)!=1023 ||
+      (trace[8]&0xffff)!=(aspect?96u:0u) || (trace[9]&0xffff)!=(aspect?671u:767u) ||
+      trace[7]!=ys||trace[10]!=xs||
+      (trace[11]&0x1fff)!=source_width()-1)return fail("xga_geometry_readback_mismatch");
+  }else if(xga_patch_cache(&xga,1)!=1)return 0;
+ }
+#endif
  return masks_at(2);
 }
 static int restore(void *u)
 {
  (void)u;int error=0;
+#ifdef CRT_XGA_PROBE
+ if(xga.dirty&&xga_patch_restore(&xga))return fail("xga_ram_recovery_pending");
+ if(xga_source_patch.dirty){
+  if(xga_source_restore(&xga_source_patch))return fail("xga_vsh_source_recovery_pending");
+  note("xga_vsh_source_restored",xga_source_patch.native?0x430944:0x430864);
+ }
+ if(xga_cache.dirty&&hd540_cache_restore(&xga_cache))return fail("xga_cache_recovery_pending");
+#endif
  if(pointers()||identities())return fail("restore_identity_changed");
  for(unsigned i=0;i<2;i++)if(dirty[i]){
   uint32_t m;if(mask_read(i,&m)|| (m!=masks[i]&&m!=profile_mask())){error=1;continue;}
@@ -244,7 +337,13 @@ static int at_original(void *u)
  unsigned mismatch=(!!s.state)|((s.mode!=saved.mode)<<1)|((s.format!=saved.format)<<2)|
   ((s.pitch!=saved.pitch)<<3)|((((s.flags^saved.flags)&~0x10000000u)!=0)<<4)|
   ((memcmp(s.raw+8,saved.raw+8,8)!=0)<<5);
- note("original_check",mismatch);return !mismatch;
+ note("original_check",mismatch);
+#ifdef CRT_XGA_PROBE
+ if(!mismatch&&xga_cache.dirty){
+  int rc=hd540_cache_finish(&xga_cache);note("xga_cache_cleanup",(unsigned)rc);return rc;
+ }
+#endif
+ return !mismatch;
 }
 static int app_active(void *u){(void)u;return flag("/dev_hdd0/tmp/240p_app.active");}
 const dp_ops *dp_native_ops(void)

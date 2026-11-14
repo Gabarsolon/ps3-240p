@@ -2,13 +2,23 @@
 #ifndef HD540_CACHE_H
 #define HD540_CACHE_H
 #include "lv1_patch.h"
+#ifdef CRT_XGA_PROBE
+#include "../../experiments/display_probe/xga_cache_payload.h"
+#define HD540_CACHE_SAMPLES 22u
+#define HD540_CACHE_TRACE_WORDS 12u
+#define HD540_CACHE_EXTRA_WORDS 1u
+#else
 #include "hd540_cache_payload.h"
-#define HD540_CACHE_WORDS (6u+HD540_CACHE_QWORDS+6u)
+#define HD540_CACHE_SAMPLES 10u
+#define HD540_CACHE_TRACE_WORDS 6u
+#define HD540_CACHE_EXTRA_WORDS 0u
+#endif
+#define HD540_CACHE_WORDS (6u+HD540_CACHE_QWORDS+HD540_CACHE_TRACE_WORDS+HD540_CACHE_EXTRA_WORDS)
 #define HD540_CACHE_TRACE (6u+HD540_CACHE_QWORDS)
 typedef struct {
  patch_context *transport;
  uint64_t address[HD540_CACHE_WORDS],original[HD540_CACHE_WORDS];
- int ready,dirty,attached;
+ int ready,dirty,attached,normalize_source;
  char error[160];
 } hd540_cache;
 int hd540_cache_identity(const uint64_t [2]);
@@ -19,5 +29,5 @@ int hd540_cache_apply(hd540_cache *);
 int hd540_cache_restore(hd540_cache *);
 /* Call only after enabled native stock state / cached stock raster / AVI 5. */
 int hd540_cache_finish(hd540_cache *);
-int hd540_cache_snapshot(hd540_cache *,uint32_t [10]);
+int hd540_cache_snapshot(hd540_cache *,uint32_t [HD540_CACHE_SAMPLES]);
 #endif

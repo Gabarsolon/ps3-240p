@@ -1,6 +1,6 @@
 {
-  "updated": "2026-11-14",
-  "note": "CLAIMED: stock 480p works directly on the owner Xiaomi monitor. PROVEN: YUY2 and MJPEG direct-card frames are also black independently of OBS. Splitter/capture/HDMI negotiation remains unresolved; no HDMI low-line timing candidate applied.",
+  "updated": "2026-11-15",
+  "note": "PROVEN: full-picture HDMI 1024x768 works in direct and fresh-boot app-menu tests. v1.6.0-dev2 is installed and file-verified; one menu choice runs automatic controls, holds XGA for 15 seconds and restores 1080p. Game compatibility and permanent enforcement remain untested.",
   "workstreams": [
     {
       "name": "240p / 288p and analog gamma",
@@ -24,8 +24,8 @@
     },
     {
       "name": "Resolution presets and scaling",
-      "status": "PROVEN on owner HDMI setup: native 1280x768, 1280x1024 and 1920x1200 timed tests with stock recovery; WUXGA verified with live receiver size/scan despite stale cache. Development menu installed; all three menu selections, clean-boot helper loading and exact recovery verified; games, scaling controls and HEN untested.",
-      "evidence": "[PC preset development](docs/PC_PRESETS_DEVELOPMENT.md); [roadmap](docs/DISPLAY_PRESETS_ROADMAP.md)"
+      "status": "PROVEN on owner HDMI setup: native 1280x768, 1280x1024 and 1920x1200 menu tests; corrected 1024x768 full XMB picture, receiver report and stock recovery. Fresh-boot v1.6.0-dev2 menu test passes with automatic controls and 15-second hold. Games, exact cadence, integer scaling, component and HEN remain untested.",
+      "evidence": "[PC preset development](docs/PC_PRESETS_DEVELOPMENT.md); [XGA investigation](docs/XGA_DEVELOPMENT.md); [roadmap](docs/DISPLAY_PRESETS_ROADMAP.md)"
     },
     {
       "name": "HEN diagnostic and port",

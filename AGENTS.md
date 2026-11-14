@@ -90,6 +90,12 @@ Research project: native 240p/288p analog output on a PS3 (CFW Evilnat 4.93 + Co
   AVI-zero control before its 540p candidate; those prerequisites apply to
   that protocol, not automatically to unrelated experiments. Actual menu
   invocation must be tested separately from direct helper requests.
+- **PROVEN (owner XGA workflow, 2026-11-15):** `docs/XGA_DEVELOPMENT.md`
+  records the complete-picture 1024x768 result and fresh-boot app-menu test.
+  Build the isolated helper with `--xga-probe` and app with `--xga-presets`;
+  use `tools/display_probe_test.py --xga` for direct requests. Its module,
+  ABI and readiness are separate from the native PC helper. The retained
+  clock/totals are non-DMT; game compatibility and exact refresh are untested.
 - Verify software completion, independent receiver status, visible geometry
   and stock restoration separately. Pixel statistics detect a lit/textured
   frame, not readability, correct scaling, scan cadence or reduced latency.

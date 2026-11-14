@@ -59,6 +59,7 @@ def main():
                           help="Build SD-only bounded PS1 audio logger under build/audio-diagnostic")
     variants.add_argument("--display-probe", action="store_true",
                           help="Build standalone timed native PC-mode probe under build/display-probe")
+    variants.add_argument("--xga-probe", action="store_true", help="Build isolated CFW-only fixed-clock XGA/scaler probe")
     parser.add_argument("--name", default="vsh_240p")
     parser.add_argument("--keep-elf", action="store_true",
                         help="Keep the intermediate ELF (default: keep it, it is the packer input)")
@@ -66,14 +67,17 @@ def main():
     if args.experimental_hd540:
         from build_hd540_cache import build
         build()
-    if args.experimental_hd540 or args.pid_compatibility or args.display_probe or args.audio_diagnostic:
-        directory = ROOT / "build" / ("hd540" if args.experimental_hd540 else "audio-diagnostic" if args.audio_diagnostic else "display-probe" if args.display_probe else "pid-compat") / "plugin"
+    if args.xga_probe:
+        from build_xga_cache import build
+        build()
+    if args.experimental_hd540 or args.pid_compatibility or args.display_probe or args.xga_probe or args.audio_diagnostic:
+        directory = ROOT / "build" / ("hd540" if args.experimental_hd540 else "audio-diagnostic" if args.audio_diagnostic else "xga-probe" if args.xga_probe else "display-probe" if args.display_probe else "pid-compat") / "plugin"
         directory.mkdir(parents=True, exist_ok=True)
         ELF, PRX, SPRX = (directory / ("vsh_240p" + suffix) for suffix in (".elf", ".prx", ".sprx"))
-    if args.display_probe:
+    if args.display_probe or args.xga_probe:
         SOURCE = ROOT / "experiments/display_probe/plugin.c"
         if args.name == "vsh_240p":
-            args.name = "crt_display_probe"
+            args.name = "crt_xga_probe" if args.xga_probe else "crt_display_probe"
 
     gcc = SDK / "ppu" / "bin" / "ppu-gcc.exe"
     linker = SIBLING / "game" / "native-prx.ld"
@@ -98,10 +102,13 @@ def main():
         "-lio",
         "-o", ELF,
     ]
-    if args.display_probe:
+    if args.display_probe or args.xga_probe:
         for old in (PLUGIN / "vsh_gamma.c", ROOT / "app/source/sysmgr.c", PLUGIN / "gamma_service.c"):
             compile_cmd.remove(old)
         compile_cmd += [ROOT / "experiments/display_probe/native.c", ROOT / "experiments/display_probe/service.c"]
+    if args.xga_probe:
+        compile_cmd[1:1] = ["-DCRT_XGA_PROBE=1"]
+        compile_cmd += [ROOT / "experiments/display_probe/xga_patch.c", ROOT / "experiments/display_probe/xga_source.c", ROOT / "app/source/sysmgr.c", ROOT / "app/source/lv1_patch.c", ROOT / "app/source/hd540_cache.c"]
     if args.audio_diagnostic:
         compile_cmd[1:1] = ["-DCRT_PS1_AUDIO_DIAGNOSTIC=1"]
         compile_cmd += [PLUGIN / "ps1_audio_log.c", PLUGIN / "vsh_ps1_audio_log.c"]

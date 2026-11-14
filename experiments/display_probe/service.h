@@ -2,11 +2,25 @@
 #ifndef DISPLAY_PROBE_SERVICE_H
 #define DISPLAY_PROBE_SERVICE_H
 #include <stdint.h>
+#ifdef CRT_XGA_PROBE
+#define DPROBE_MAGIC UINT32_C(0x58474131)
+#define DPROBE_ROOT "/dev_hdd0/tmp/crt_xga_probe"
+#define DPROBE_READY DPROBE_ROOT ".v1.ready"
+#define DPROBE_PROFILES 9u
+#define DPROBE_MODULE "crt_xga_probe"
+#define DPROBE_START "xga_probe_v1_start"
+#else
 #define DPROBE_MAGIC UINT32_C(0x44535032)
-#define DPROBE_REQUEST "/dev_hdd0/tmp/crt_display_probe.request"
-#define DPROBE_REPLY "/dev_hdd0/tmp/crt_display_probe.reply"
-#define DPROBE_READY "/dev_hdd0/tmp/crt_display_probe.v2.ready"
-#define DPROBE_LOG "/dev_hdd0/tmp/crt_display_probe.log"
+#define DPROBE_ROOT "/dev_hdd0/tmp/crt_display_probe"
+#define DPROBE_READY DPROBE_ROOT ".v2.ready"
+#define DPROBE_PROFILES 3u
+#define DPROBE_MODULE "crt_display_probe"
+#define DPROBE_START "display_probe_v2_start"
+#endif
+#define DPROBE_REQUEST DPROBE_ROOT ".request"
+#define DPROBE_REPLY DPROBE_ROOT ".reply"
+#define DPROBE_LOG DPROBE_ROOT ".log"
+
 enum {DP_INSPECT=1,DP_STOCK720,DP_CAPS,DP_WXGA,DP_CANCEL,DP_AUTO};
 enum {DP_IDLE,DP_WAIT_SOURCE,DP_WAIT_TARGET,DP_ACTIVE,DP_RESTORE,DP_DONE,DP_REFUSED,DP_RECOVERY_FAILED,DP_WAIT_APP};
 enum {DP_OK,DP_CANCELLED,DP_PREPARE_ERROR,DP_ENTER_ERROR,DP_TIMEOUT,DP_RESTORE_ERROR,DP_PREREQUISITE,DP_BAD_REQUEST};

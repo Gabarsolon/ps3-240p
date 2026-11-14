@@ -1,7 +1,8 @@
-"""Automated timed native PC-mode investigation with real OBS evidence.
+"""Automated timed native PC-mode/XGA investigation with real OBS evidence.
 
-Requires the separately built/verified crt_display_probe already resident.
-Never installs, writes console memory, edits boot settings or evicts a plugin.
+Requires the separately built/verified helper already resident. Native PC
+modes use existing VSH interfaces; --xga selects the CFW timing experiment.
+This client never installs, writes arbitrary memory, edits boot settings or evicts a plugin.
 The helper owns automatic restoration even if this client disconnects.
 """
 import argparse
@@ -22,8 +23,15 @@ from hd540_auto_test import Capture, parse_slots
 ROOT=Path(__file__).resolve().parents[1]
 MAGIC=0x44535032
 BASE="/dev_hdd0/tmp/crt_display_probe"
+MODULE="crt_display_probe"
+BUILD="display-probe"
 REQUEST,REPLY,READY=BASE+".request",BASE+".reply",BASE+".v2.ready"
 ACTIONS={"inspect":1,"stock":2,"caps":3,"wxga":4,"sxga":4,"wuxga":4}
+PROFILES={"wxga":1,"sxga":2,"wuxga":3,"xga-raster":4,"xga-stretch":5,"xga-aspect":6,
+          "xga-480-stretch":7,"xga-480-aspect":8,"xga-native":9}
+DIMENSIONS={"wxga":(1280,768),"sxga":(1280,1024),"wuxga":(1920,1200),
+            "xga-raster":(1024,768),"xga-stretch":(1024,768),"xga-aspect":(1024,768),
+            "xga-480-stretch":(1024,768),"xga-480-aspect":(1024,768),"xga-native":(1024,768)}
 TERMINAL={5,6,7}
 
 
@@ -62,10 +70,10 @@ class DisplayConsole:
             raise RuntimeError("Probe busy or recovery latched; no new test")
         page=urlopen(f"http://{self.host}/vshplugin.ps3mapi",timeout=6).read().decode(errors="replace")
         slots=parse_slots(page)
-        resident=[v for v in slots.values() if v["name"]=="crt_display_probe"]
-        if resident!=[{"name":"crt_display_probe","path":BASE+".sprx"}] or self.read(READY,True) is None:
+        resident=[v for v in slots.values() if v["name"]==MODULE]
+        if resident!=[{"name":MODULE,"path":BASE+".sprx"}] or self.read(READY,True) is None:
             raise RuntimeError("Matching live probe is not ready")
-        local=ROOT/"build/display-probe/plugin/vsh_240p.sprx"
+        local=ROOT/"build"/BUILD/"plugin/vsh_240p.sprx"
         if self.read(BASE+".sprx")!=local.read_bytes():raise RuntimeError("Probe file identity mismatch")
 
     def publish(self,action,cancel=False,profile=1):
@@ -127,7 +135,7 @@ def receiver(scan=False,timing=False):
 
 
 def run_test(console,capture,name,folder,baseline,scan,selected="wxga",timing=False):
-    profile={"sxga":2,"wuxga":3}.get(selected if name=="caps" else name,1)
+    profile=PROFILES.get(selected if name=="caps" else name,1)
     sequence=console.publish(ACTIONS[name],profile=profile);print(f"{name}: sequence {sequence}",flush=True)
     result={"name":name,"sequence":sequence,"frames":[],"refresh_hz":None,"geometry_review":"pending"}
     start=time.monotonic();active_start=None;last_state=None;stamp=None
@@ -142,8 +150,8 @@ def run_test(console,capture,name,folder,baseline,scan,selected="wxga",timing=Fa
             if state==3:
                 if active_start is None:active_start=time.monotonic()
                 if "receiver" not in result and time.monotonic()-active_start>=7:
-                    result["receiver"]=receiver(scan and name in ("wxga","sxga","wuxga"),timing and name in ("wxga","sxga","wuxga"))
-                    result["live_scan_query_may_disturb_capture"]=bool((scan or timing) and name in ("wxga","sxga","wuxga"))
+                    result["receiver"]=receiver(scan and name in PROFILES,timing and name in PROFILES)
+                    result["live_scan_query_may_disturb_capture"]=bool((scan or timing) and name in PROFILES)
             if state in TERMINAL:
                 result.update(reply)
                 if state!=7:console.pending=None
@@ -158,10 +166,10 @@ def run_test(console,capture,name,folder,baseline,scan,selected="wxga",timing=Fa
     active=[r for r in result["frames"] if r["state"]==3]
     mature=[r for r in active if r["elapsed"]>=active[0]["elapsed"]+4] if active else []
     result["active_picture_fraction"]=sum(r["picture_detected"] for r in mature)/len(mature) if mature else 0
-    expected=(1280,720) if name=="stock" else {"wxga":(1280,768),"sxga":(1280,1024),"wuxga":(1920,1200)}[name] if name in ("wxga","sxga","wuxga") else (baseline["reported_width"],baseline["reported_height"])
+    expected=(1280,720) if name=="stock" else DIMENSIONS[name] if name in PROFILES else (baseline["reported_width"],baseline["reported_height"])
     actual=result.get("receiver",{})
     result["receiver_matches"]=name=="inspect" or (actual.get("reported_width"),actual.get("reported_height"))==expected and actual.get("reported_signal_present") is True
-    if timing and name in ("wxga","sxga","wuxga"):
+    if timing and name in PROFILES:
         result["receiver_matches"]=(actual.get("live_reported_width"),actual.get("live_reported_height"))==expected and actual.get("live_reported_signal_present") is True
     returned=result["restored_receiver"]
     result["receiver_restored"]=(returned["reported_width"],returned["reported_height"] )==(baseline["reported_width"],baseline["reported_height"]) and returned["reported_signal_present"]
@@ -172,13 +180,22 @@ def run_test(console,capture,name,folder,baseline,scan,selected="wxga",timing=Fa
 
 
 def main():
+    global MAGIC,BASE,MODULE,BUILD,REQUEST,REPLY,READY
     parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--xga",action="store_true",help="Use the isolated CFW XGA helper/ABI; not the installed release helper")
     parser.add_argument("--host",default="192.168.0.169")
-    parser.add_argument("--action",choices=[*ACTIONS,"all"],default="inspect")
-    parser.add_argument("--profile",choices=["wxga","sxga","wuxga"],default="wxga",help="Target for caps/all")
+    parser.add_argument("--action",choices=[*ACTIONS,*[n for n in PROFILES if n.startswith("xga-")],"all"],default="inspect")
+    parser.add_argument("--profile",choices=list(PROFILES),default="wxga",help="Target for caps/all")
     parser.add_argument("--timing-candidate",action="store_true",help="Separate diagnostic: one potentially disruptive live input dimension/scan sample")
     parser.add_argument("--scan-candidate",action="store_true",help="One possibly disruptive live scan query during WXGA; separate from undisturbed validation")
-    args=parser.parse_args();folder=ROOT/"local_only/display_presets/automatic"/datetime.now().strftime("%Y%m%d-%H%M%S")
+    args=parser.parse_args()
+    if not args.xga and (args.action.startswith("xga-") or args.profile.startswith("xga-")):
+        parser.error("XGA profiles require --xga and the matching CFW helper")
+    if args.xga:
+        MAGIC=0x58474131;BASE="/dev_hdd0/tmp/crt_xga_probe";MODULE="crt_xga_probe";BUILD="xga-probe"
+        REQUEST,REPLY,READY=BASE+".request",BASE+".reply",BASE+".v1.ready"
+        ACTIONS.update({name:4 for name in PROFILES if name.startswith("xga-")})
+    folder=ROOT/("local_only/xga_scaling/automatic" if args.xga else "local_only/display_presets/automatic")/datetime.now().strftime("%Y%m%d-%H%M%S")
     folder.mkdir(parents=True);report={"time":datetime.now(timezone.utc).isoformat(),"tests":[],"status":"starting"}
     console=capture=None
     try:

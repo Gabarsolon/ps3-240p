@@ -34,6 +34,19 @@ The images show borders. These profiles convert existing 720p/1080p sources;
 they do not make games render natively at arbitrary resolutions. No preset
 in this set is 1024 x 768 / 4:3.
 
+**PROVEN (separate CFW experiment):** a fixed-clock 1024 x 768 raster is
+now accepted by the owner's HDMI capture chain, with visible XMB and timed
+stock recovery. On 2026-11-15, retaining the logical XMB canvas while changing
+the allocation and correcting the AV request produced a complete picture;
+the undisturbed 15-second repeat passed. See [XGA development](XGA_DEVELOPMENT.md).
+This uses an isolated CFW RAM-patching helper and is not a choice in
+`1.6.0-dev1`. The separate `--xga-presets` / `1.6.0-dev2` build adds its timed
+test alongside the three native presets. The fresh-boot menu test also
+passes: the app loads its packaged helper, exits before switching, runs the
+controls automatically, shows the complete XMB for 15.110039 seconds and
+restores 1080p. Evidence: `local_only/xga_scaling/menu-20261115-014110/`.
+This does not establish game compatibility or permanent enforcement.
+
 ## Native selection and guards
 
 **PROVEN (retail binary and live traces):** monitor types 11/12/13 map to

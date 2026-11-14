@@ -65,6 +65,10 @@ after the preset path is reliable.
 
 See [investigation findings](DISPLAY_PRESETS_INVESTIGATION.md) for the evidence
 collected after this roadmap was approved.
+Native menu trials are recorded in [PC preset development](PC_PRESETS_DEVELOPMENT.md).
+The later CFW 1024 x 768 raster/scaler work is recorded separately in
+[XGA development](XGA_DEVELOPMENT.md), with signal acceptance distinguished
+from correct picture fitting.
 
 ## Other community requests to track
 

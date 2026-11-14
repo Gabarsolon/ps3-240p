@@ -8,7 +8,7 @@ int main(void)
  hd540_cache h={0};hd_setup();assert(!hd540_cache_resolve(&h,&c)&&!stores);
  assert(!hd540_cache_apply(&h)&&stores==HD540_CACHE_QWORDS+1&&h.dirty&&h.attached);
  assert(get(NULL,h.address[0])==UINT64_C(0x8003f800));
- uint32_t values[10];assert(hd540_cache_snapshot(&h,values)==1&&values[0]==0);
+ uint32_t values[HD540_CACHE_SAMPLES];assert(hd540_cache_snapshot(&h,values)==1&&values[0]==0);
  put64(h.address[HD540_CACHE_TRACE],(UINT64_C(1)<<32)|1);
  assert(hd540_cache_snapshot(&h,values)==0);
  put64(h.address[HD540_CACHE_TRACE],UINT64_C(1)<<32);
@@ -34,6 +34,21 @@ int main(void)
  assert(hd540_cache_apply(&h)==-1&&!stores);
  hd_setup();memset(&h,0,sizeof(h));assert(!hd540_cache_resolve(&h,&c));put64(0x122180,0x1140000);
  assert(hd540_cache_apply(&h)==-1&&!stores);
+#ifdef CRT_XGA_PROBE
+ /* The source normalizer is explicitly armed before attachment. A failed
+  * control or descriptor store must clear every staged byte, too. */
+ for(unsigned failure=1;failure<=HD540_CACHE_QWORDS+2;failure++){
+  hd_setup();memset(&h,0,sizeof(h));assert(!hd540_cache_resolve(&h,&c));h.normalize_source=1;
+  drop_store=(int)failure;assert(hd540_cache_apply(&h)==-1&&!h.dirty&&!h.attached);empty(&h);
+ }
+ hd_setup();memset(&h,0,sizeof(h));assert(!hd540_cache_resolve(&h,&c));h.normalize_source=1;
+ assert(!hd540_cache_apply(&h)&&stores==HD540_CACHE_QWORDS+2);
+ assert(hd540_cache_snapshot(&h,values)==1);
+ unsigned control=HD540_CACHE_TRACE+HD540_CACHE_TRACE_WORDS;
+ put64(h.address[control],0);assert(hd540_cache_snapshot(&h,values)==-1&&h.dirty);
+ put64(h.address[control],UINT64_C(0x5847413900001000));
+ assert(hd540_cache_finish(&h)==1&&!h.dirty);empty(&h);
+#endif
  puts("PASS: native wrapper arena/descriptor identity, all staged-store failures, deferred stock flush/cleanup, in-flight gate, retry and changed mapping/body refusal");
  return 0;
 }

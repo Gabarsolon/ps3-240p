@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MIT. Own code in checked unused mapped RAM padding.
  * Wrapper performs native cache maintenance and read-only FP telemetry.
+ * The isolated XGA variant may arm an exact temporary source-request edit.
  * No Sony instruction bytes, direct MMIO writes or permanent storage writes. */
 #include "hd540_cache.h"
 #include <stdio.h>
@@ -12,7 +13,7 @@ static void targets(uint32_t va[HD540_CACHE_WORDS])
  va[0]=0xc0003350;va[1]=0xc0003358;va[2]=0xc0003360;
  va[3]=0x8000d8e8;va[4]=0x8000d8f0;va[5]=0x8003d4b8;
  for(unsigned i=0;i<HD540_CACHE_QWORDS;i++)va[6+i]=(uint32_t)WRAPPER_VA+i*8;
- for(unsigned i=0;i<6;i++)va[HD540_CACHE_TRACE+i]=0xc000de00+i*8;
+ for(unsigned i=0;i<HD540_CACHE_TRACE_WORDS+HD540_CACHE_EXTRA_WORDS;i++)va[HD540_CACHE_TRACE+i]=0xc000de00+i*8;
 }
 int hd540_cache_identity(const uint64_t words[2])
 {
@@ -54,17 +55,21 @@ int hd540_cache_resolve(hd540_cache *h,patch_context *c)
   return fail(h,"Audited module-padding arena is not empty; no overwrite");
  h->ready=1;return 0;
 }
-int hd540_cache_snapshot(hd540_cache *h,uint32_t out[10])
+int hd540_cache_snapshot(hd540_cache *h,uint32_t out[HD540_CACHE_SAMPLES])
 {
  if(!h||!h->ready||current(h))return -1;
  if(!h->attached||rd(h,0)!=WRAPPER_VA)return -1;
+#ifdef CRT_XGA_PROBE
+ if(rd(h,HD540_CACHE_TRACE+HD540_CACHE_TRACE_WORDS)!=(h->normalize_source?UINT64_C(0x5847413900001000):0))
+  return fail(h,"Native source control ownership changed");
+#endif
  for(unsigned i=0;i<HD540_CACHE_QWORDS;i++)if(rd(h,6+i)!=hd540_cache_words[i])return -1;
- uint64_t a[6],b[6];
- for(unsigned i=0;i<6;i++)a[i]=rd(h,HD540_CACHE_TRACE+i);
- for(unsigned i=0;i<6;i++)b[i]=rd(h,HD540_CACHE_TRACE+i);
+ uint64_t a[HD540_CACHE_TRACE_WORDS],b[HD540_CACHE_TRACE_WORDS];
+ for(unsigned i=0;i<HD540_CACHE_TRACE_WORDS;i++)a[i]=rd(h,HD540_CACHE_TRACE+i);
+ for(unsigned i=0;i<HD540_CACHE_TRACE_WORDS;i++)b[i]=rd(h,HD540_CACHE_TRACE+i);
  if(memcmp(a,b,sizeof(a)))return 0;
- for(unsigned i=0;i<10;i++)out[i]=(uint32_t)(a[i/2]>>(i&1?0:32));
- if(out[1]>1||a[5])return fail(h,"Native telemetry layout changed");
+ for(unsigned i=0;i<HD540_CACHE_SAMPLES;i++)out[i]=(uint32_t)(a[i/2]>>(i&1?0:32));
+ if(out[1]>1||a[HD540_CACHE_TRACE_WORDS-1])return fail(h,"Native telemetry layout changed");
  return out[1]?0:1;
 }
 static int clear_arena(hd540_cache *h)
@@ -101,7 +106,7 @@ int hd540_cache_finish(hd540_cache *h)
  if(!h||!h->ready||current(h))return -1;
  if(!h->dirty)return 1;
  if(rd(h,0)==WRAPPER_VA){
-  uint32_t values[10];int rc=hd540_cache_snapshot(h,values);if(rc!=1)return rc;
+  uint32_t values[HD540_CACHE_SAMPLES];int rc=hd540_cache_snapshot(h,values);if(rc!=1)return rc;
   wr(h,0,h->original[0]);if(rd(h,0)!=h->original[0])return fail(h,"Native callback restoration unconfirmed");
  }else if(rd(h,0)!=h->original[0])return fail(h,"Native callback identity changed before cleanup");
  h->attached=0;
@@ -117,6 +122,15 @@ int hd540_cache_apply(hd540_cache *h)
   wr(h,6+i,hd540_cache_words[i]);
   if(rd(h,6+i)!=hd540_cache_words[i]){(void)hd540_cache_restore(h);return fail(h,"Native wrapper staging failed");}
  }
+#ifdef CRT_XGA_PROBE
+ if(h->normalize_source){
+  unsigned control=HD540_CACHE_TRACE+HD540_CACHE_TRACE_WORDS;
+  wr(h,control,UINT64_C(0x5847413900001000));
+  if(rd(h,control)!=UINT64_C(0x5847413900001000)){
+   (void)hd540_cache_restore(h);return fail(h,"Native source control staging failed");
+  }
+ }
+#endif
  wr(h,0,WRAPPER_VA);
  if(rd(h,0)!=WRAPPER_VA){(void)hd540_cache_restore(h);return fail(h,"Native callback attachment failed");}
  h->attached=1;return 0;

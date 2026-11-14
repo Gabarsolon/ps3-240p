@@ -7,7 +7,7 @@ static int app_open;
 static int app_active(void *u){(void)u;return app_open;}
 static int prepare_error,enter_error,caps_error,restore_error,at_source,target,original,restores,candidates,stock_calls;
 static uint64_t call_delay;
-static int prepare(void *u,unsigned profile){(void)u;assert(profile>=1&&profile<=3);return prepare_error;}
+static int prepare(void *u,unsigned profile){(void)u;assert(profile>=1&&profile<=DPROBE_PROFILES);return prepare_error;}
 static int stock(void *u){(void)u;stock_calls++;now+=call_delay;original=0;return enter_error;}
 static int caps(void *u){(void)u;now+=call_delay;original=0;return caps_error;}
 static int candidate(void *u){(void)u;candidates++;now+=call_delay;return enter_error;}
@@ -52,7 +52,19 @@ int main(void)
  restores=0;request_profile(DP_CAPS,3);finish();assert((s.controls&9)==9);
  restores=0;request_profile(DP_WXGA,3);assert(s.state==DP_WAIT_TARGET);finish();
  /* Invalid profile never reaches the backend. */
- request_profile(DP_CAPS,4);assert(s.state==DP_REFUSED&&s.detail==DP_BAD_REQUEST);
+ request_profile(DP_CAPS,DPROBE_PROFILES+1);assert(s.state==DP_REFUSED&&s.detail==DP_BAD_REQUEST);
+#ifdef CRT_XGA_PROBE
+ /* Every extra CFW profile independently requires its caps control and a
+  * full hold; native controls cannot accidentally authorize a geometry edit. */
+ for(unsigned profile=4;profile<=DPROBE_PROFILES;profile++){
+  reset();request(DP_STOCK720);finish();
+  restores=0;request(DP_CAPS);finish();
+  request_profile(DP_WXGA,profile);assert(s.state==DP_REFUSED&&!candidates);
+  restores=0;request_profile(DP_CAPS,profile);finish();
+  restores=0;at_source=1;request_profile(DP_WXGA,profile);
+  assert(s.state==DP_WAIT_TARGET&&candidates==1);finish();assert(!s.detail);
+ }
+#endif
  /* Failure after partially changing capabilities still invokes restoration. */
  reset();caps_error=1;request(DP_CAPS);assert(s.state==DP_RESTORE&&restores==1);
  original=1;tick();assert(s.state==DP_DONE&&s.detail==DP_ENTER_ERROR&&!s.controls);

@@ -798,7 +798,7 @@ static void hd_menu(void)
 #endif
 #ifdef CRT_ENABLE_PRESETS
 static int pc_pending;
-#define PC_HELPER "/dev_hdd0/game/PS240P001/USRDIR/crt_display_probe.sprx"
+#define PC_HELPER "/dev_hdd0/game/PS240P001/USRDIR/" DPROBE_MODULE ".sprx"
 static int pc_reply(dp_reply *reply)
 {
  FILE *f=fopen(DPROBE_REPLY,"rb");if(!f)return -1;
@@ -816,9 +816,10 @@ static int pc_helper(void)
   if((uint32_t)rc==0x80010006u){if(!empty)empty=slot;continue;}
   if(rc)return -1;
   if(!strcmp(name,"vsh_240p"))return -1;
-  if(!strcmp(name,"crt_display_probe")){
+  if(!strcmp(name,DPROBE_MODULE)){
    if(resident)return -1;resident=slot;snprintf(resident_path,sizeof(resident_path),"%s",path);
-  }else if(!name[0]&&!path[0]&&!empty)empty=slot;
+  }else if(!strcmp(name,"crt_display_probe")||!strcmp(name,"crt_xga_probe"))return -1;
+  else if(!name[0]&&!path[0]&&!empty)empty=slot;
  }
  if(resident){
   int size=0;uint64_t hash=file_digest(resident_path,&size);
@@ -828,7 +829,7 @@ static int pc_helper(void)
   clear_flag(DPROBE_READY);
   if(load_vsh_plugin(empty,PC_HELPER))return -1;
   char name[96]={0},path[256]={0};
-  if(helper_info(0,empty,name,path)||strcmp(name,"crt_display_probe")||strcmp(path,PC_HELPER))return -1;
+  if(helper_info(0,empty,name,path)||strcmp(name,DPROBE_MODULE)||strcmp(path,PC_HELPER))return -1;
  }
  uint64_t deadline=now()+5000000;
  while(!flag_present(DPROBE_READY)&&now()<deadline&&!exiting){pump();usleep(50000);}
@@ -868,13 +869,26 @@ static void pc_run(unsigned profile)
 }
 static void pc_menu(void)
 {
- const char *items[]={"Test 1280x768 / 5:3","Test 1280x1024 / 5:4","Test 1920x1200 / 16:10","Pause SD enforcement","Back"};int selected=0;
+#ifdef CRT_XGA_PROBE
+ const char *items[]={"Test 1024x768 / 4:3 (CFW)","Test 1280x768 / 5:3","Test 1280x1024 / 5:4","Test 1920x1200 / 16:10","Pause SD enforcement","Back"};
+ const unsigned profiles[]={9,1,2,3};
+#else
+ const char *items[]={"Test 1280x768 / 5:3","Test 1280x1024 / 5:4","Test 1920x1200 / 16:10","Pause SD enforcement","Back"};
+#endif
+ const unsigned count=sizeof(items)/sizeof(items[0]);
+ int selected=0;
  while(!exiting){
   ui_view view={0};view.title="HDMI PC presets / 15-second tests\nRuns checks at XMB, then restores 1080p";
-  view.items=items;view.count=5;view.selected=selected;view.page=-1;
+  view.items=items;view.count=(int)count;view.selected=selected;view.page=-1;
   if(frame(&view))break;unsigned key=input();if(key&CIRCLE)break;
-  if(key&UP)selected=(selected+4)%5;if(key&DOWN)selected=(selected+1)%5;
-  if(key&CROSS){if(selected==4)break;if(selected==3){clear_flag(ENFORCER_FLAG);status("SD enforcement paused","Reboot to clear existing timing edits. Select HDMI 1080p before testing a PC preset.");}else pc_run((unsigned)selected+1);}
+  if(key&UP)selected=(selected+(int)count-1)%(int)count;if(key&DOWN)selected=(selected+1)%(int)count;
+  if(key&CROSS){if(selected==(int)count-1)break;if(selected==(int)count-2){clear_flag(ENFORCER_FLAG);status("SD enforcement paused","Reboot to clear existing timing edits. Select HDMI 1080p before testing a PC preset.");}
+#ifdef CRT_XGA_PROBE
+   else pc_run(profiles[selected]);
+#else
+   else pc_run((unsigned)selected+1);
+#endif
+  }
  }
 }
 #endif
