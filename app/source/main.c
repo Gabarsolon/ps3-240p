@@ -36,9 +36,13 @@
 #include "gamma_ipc.h"
 #ifdef CRT_ENABLE_HD540
 #include "hd540_protocol.h"
+#endif
+#ifndef CRT_BUILD_VERSION
+#ifdef CRT_ENABLE_HD540
 #define CRT_BUILD_VERSION "1.5.0-dev19"
 #else
 #define CRT_BUILD_VERSION "1.4.3"
+#endif
 #endif
 
 SYS_PROCESS_PARAM(1001,0x100000);
@@ -798,7 +802,7 @@ static void diagnostics(void)
  else snprintf(cache,sizeof(cache),"AV cached raster (not a measurement):\nHead 0: %u active / %u total, state=%u\nHead 1: %u active / %u total, state=%u",
   cached_video.head[0].active_lines,cached_video.head[0].total_lines,cached_video.head[0].state,
   cached_video.head[1].active_lines,cached_video.head[1].total_lines,cached_video.head[1].state);
- snprintf(text,sizeof(text),"CRT Toolset 1.4.3 / diagnostics\nReported output: %ux%u %s\nPort: 0x%02x (RGB/SCART supported)\nNTSC tables: %s\nPAL tables: %s\nLV1 access: %s\nAV UART permission: %s (no command sent)\nLog: %s\n\n%s\n\n%s\n\nTiming tests enabled with 15-second automatic recovery safeguard.",
+ snprintf(text,sizeof(text),"CRT Toolset " CRT_BUILD_VERSION " / diagnostics\nReported output: %ux%u %s\nPort: 0x%02x (RGB/SCART supported)\nNTSC tables: %s\nPAL tables: %s\nLV1 access: %s\nAV UART permission: %s (no command sent)\nLog: %s\n\n%s\n\n%s\n\nTiming tests enabled with 15-second automatic recovery safeguard.",
   resolution.width,resolution.height,state.displayMode.scanMode==VIDEO_SCANMODE_INTERLACE?"interlaced":"progressive",
   device.portType,memory_state(patch_state(&patch,0)),memory_state(patch_state(&patch,1)),
   backend==1?"PS3MAPI":backend==2?"CFW 8/9":"not verified",

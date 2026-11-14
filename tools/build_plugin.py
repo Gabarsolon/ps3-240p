@@ -50,8 +50,11 @@ def sha256(path):
 def main():
     global ELF, PRX, SPRX
     parser = argparse.ArgumentParser()
-    parser.add_argument("--experimental-hd540", action="store_true",
+    variants = parser.add_mutually_exclusive_group()
+    variants.add_argument("--experimental-hd540", action="store_true",
                         help="Build experimental helper under build/hd540; preserve the release helper")
+    variants.add_argument("--pid-compatibility", action="store_true",
+                          help="Build the SD PID compatibility helper under build/pid-compat")
     parser.add_argument("--name", default="vsh_240p")
     parser.add_argument("--keep-elf", action="store_true",
                         help="Keep the intermediate ELF (default: keep it, it is the packer input)")
@@ -59,7 +62,8 @@ def main():
     if args.experimental_hd540:
         from build_hd540_cache import build
         build()
-        directory = ROOT / "build" / "hd540" / "plugin"
+    if args.experimental_hd540 or args.pid_compatibility:
+        directory = ROOT / "build" / ("hd540" if args.experimental_hd540 else "pid-compat") / "plugin"
         directory.mkdir(parents=True, exist_ok=True)
         ELF, PRX, SPRX = (directory / ("vsh_240p" + suffix) for suffix in (".elf", ".prx", ".sprx"))
 
@@ -80,6 +84,7 @@ def main():
         SOURCE,
         PLUGIN / "vsh_video.c",
         PLUGIN / "vsh_gamma.c",
+        ROOT / "app/source/sysmgr.c",
         PLUGIN / "gamma_service.c",
         SDK / "ppu" / "lib" / "lv2-prx-crt.o",
         "-lio",

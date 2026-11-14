@@ -4,6 +4,7 @@
  */
 #include "vsh_gamma.h"
 #include "vsh_video.h"
+#include "../app/source/sysmgr.h"
 #include <stdint.h>
 #ifndef VSH_GAMMA_HOST_TEST
 #include <ppu-lv2.h>
@@ -24,32 +25,14 @@ static uint64_t ram64(uint64_t a)
  return mock_gamma_ram64(a);
 #endif
 }
-static uint32_t ram32(uint64_t a)
-{uint64_t v=ram64(a&~UINT64_C(7));return a&4?(uint32_t)v:(uint32_t)(v>>32);}
-typedef struct {uint64_t physical,size;uint32_t va;} page;
-static int address(const page *pages,unsigned count,uint32_t va,uint64_t *physical)
-{
- unsigned found=0;
- for(unsigned i=0;i<count;i++)if(va>=pages[i].va&&(uint64_t)va-pages[i].va+8<=pages[i].size){
-  *physical=pages[i].physical+va-pages[i].va;found++;
- }
- return found==1&&*physical>=0x1000&&*physical<=0x1fffff8&&!(*physical&7)?0:-1;
-}
+static uint64_t service_read(void *user,uint64_t a)
+{(void)user;return ram64(a);}
+static int address(const sysmgr_page *pages,unsigned count,uint32_t va,uint64_t *physical)
+{return sysmgr_translate(pages,count,va,physical);}
 static int read_exponents(float out[3],int require_sd)
 {
- page pages[512];unsigned count=0;
- uint64_t proc=ram64(0x36cdb0+10*16+8);
- if(ram32(proc)!=10)return -1;
- uint64_t domain=ram64(proc+0x18);if(ram64(domain)!=0x35ecb8)return -1;
- uint64_t sentinel=domain+0x28,node=ram32(domain+0x3c),seen[512];
- while(node!=sentinel){
-  if(count==512||node<0x1000||node>0x1ffffd0||(node&7))return -1;
-  for(unsigned i=0;i<count;i++)if(seen[i]==node)return -1;
-  seen[count]=node;unsigned shift=(unsigned)(ram64(node+0x18)>>56);
-  if(shift<12||shift>25)return -1;
-  page *p=&pages[count++];p->physical=ram64(node);p->va=ram32(node+8);p->size=UINT64_C(1)<<shift;
-  node=ram32(node+0x14);
- }
+ sysmgr_page pages[SYSMGR_PAGE_LIMIT];unsigned count=0;sysmgr_report report;
+ if(sysmgr_discover(service_read,NULL,pages,&count,&report))return -1;
  uint64_t pa;
  if(address(pages,count,0xc000b440,&pa)||ram64(pa)!=0xc000d4c8)return -1;
  if(address(pages,count,0xc000d4c8,&pa))return -1;

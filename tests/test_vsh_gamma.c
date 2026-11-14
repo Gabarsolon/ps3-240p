@@ -28,11 +28,13 @@ int main(void)
  /* Disjoint maps and a real-style linked protection-page list. */
  put(0x36cdb0+10*16+8,0x120000);put(0x120000,UINT64_C(10)<<32);put(0x120018,0x121000);
  put(0x121000,0x35ecb8);put(0x121038,0x122000);
- unsigned va[]={0xc000b000,0xc000d000,0xa0001000};unsigned pa[]={0x160000,0x180000,0x130000};
- for(unsigned i=0;i<3;i++){
+ unsigned va[]={0xc000b000,0xc000d000,0xa0001000,0x80005000,0xc000a000};unsigned pa[]={0x160000,0x180000,0x130000,0x190000,0x1a0000};
+ for(unsigned i=0;i<5;i++){
   unsigned at=0x122000+i*0x20;put(at,pa[i]);put(at+8,(uint64_t)va[i]<<32);
-  put(at+0x10,i==2?0x121028:at+0x20);put(at+0x18,UINT64_C(12)<<56);
+  put(at+0x10,i==4?0x121028:at+0x20);put(at+0x18,UINT64_C(12)<<56);
  }
+ for(unsigned i=0;i<32;i++)ram[0x190e78+i]=(unsigned char)i;
+ put(0x1a0f68,0x80038ad8);put(0x1a0f70,0x80038b10);
  put(0x160440,0xc000d4c8);put(0x1804c8,0xa0001000);
  put(0x1300e8,(UINT64_C(3)<<32)|720);put(0x1300f0,(UINT64_C(576)<<32)|3072);
  put(0x1300f8,7);for(unsigned i=0;i<3;i++)exponent(i,1.0f);
@@ -50,6 +52,9 @@ int main(void)
  exponent(0,0.9f);exponent(1,1.1f);exponent(2,1.2f);assert(!vsh_gamma_snapshot(original));
  assert(!vsh_gamma_set(220));assert(!vsh_gamma_apply(original));assert(!vsh_gamma_snapshot(actual));
  assert(!memcmp(original,actual,sizeof(actual)));
+ /* Gamma readback and native calls must follow a relocated service too. */
+ put(0x36cdb0+10*16+8,0);put(0x36cdb0+3*16+8,0x120000);put(0x120000,UINT64_C(3)<<32);
+ assert(!vsh_gamma_set(220));assert(!vsh_gamma_apply(original));
  /* Invalid mappings and NaN never reach the native call. */
  before=calls;put(0x130228,0);assert(vsh_gamma_set(220)&&calls==before);put(0x130228,2);
  put(0x1301a8,UINT64_C(0x7fc000003f800000));assert(vsh_gamma_set(220)&&calls==before);

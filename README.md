@@ -26,7 +26,7 @@ CRT setup. [Release notes](docs/RELEASE_v1.4.3.md) and
 | Native PS3 homebrew application (EBOOT.BIN / PS3-240P.pkg) | 10% | `████████░░` 80.0% |
 | Hardware waveform verification (line count, sync, 15.7 kHz) | 5% | `░░░░░░░░░░` 0% |
 
-_Last update: 2026-11-14. PROVEN: v1.5.0-dev19 HDMI 540p prerelease published with exact owner-tested package and verified downloadable SHA-256. Source/tag pushed; v1.4.3 remains latest stable. CLAIMED owner confirms 540p works; HD CRT/component/game coverage remains UNKNOWN._
+_Last update: 2026-11-14. PROVEN: checked sysmgr discovery replaces PID-10 assumptions for timing/gamma; all 32 synthetic PID positions, private-firmware checks and native owner lookup passed. Local SD v1.4.4-rc1 built; external CECH-2004A result and RC visual output unverified (docs/SYSMGR_DISCOVERY.md)._
 <!-- progress:end -->
 
 The progress block is generated from `docs/progress.json`; percentages estimate work, not electrical verification.

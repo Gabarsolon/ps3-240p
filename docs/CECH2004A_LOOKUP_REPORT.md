@@ -1,7 +1,7 @@
 # CECH-2004A v1.4.3 lookup failure report
 
 Checkpoint: 2026-11-14. Reporter identity and console are not independently
-verified. No claim of a model-specific fix or working test build is made.
+verified. Compatibility on the reported console remains unverified.
 
 **CLAIMED (external tester, message relayed by owner):** a PAL Slim
 CECH-2004A (NOR), Evilnat 4.93 CEX + Cobra 8.5, with full CFW syscalls
@@ -10,10 +10,10 @@ enabled, refuses 240p and 288p in v1.4.3. Their supplied log reports
 analog video query succeeds. Source: owner's relayed message, 2026-11-14.
 
 **PROVEN (source):** `app/source/lv1_patch.c`, function `service_pages`,
-reads only process-table slot 10 at `0x36cdb0 + 10*16 + 8`. The quoted
+in v1.4.3 reads only process-table slot 10 at `0x36cdb0 + 10*16 + 8`. The quoted
 error conflates three failures: an out-of-bounds pointer, an unaligned
 pointer, or a process header whose PID is not 10. It does not log the raw
-readback. `plugin/vsh_gamma.c` also assumes slot/PID 10 for LUT readback.
+readback. The v1.4.3 `plugin/vsh_gamma.c` also assumes slot/PID 10 for LUT readback.
 
 **UNKNOWN:** whether this tester's sysmgr occupies another PID, LV1 reads
 are unavailable, or the fixed 4.93 layout differs. Successful video queries
@@ -65,6 +65,18 @@ HTTP views. Source: `tests/test_diagnose_sysmgr.py`.
 sysmgr identity and both anchor pointers. Evidence: ignored
 `local_only/sysmgr-diagnostic/20261114-132346/report.json`.
 **UNKNOWN:** this external tester's result. This diagnostic is not a fix,
-and the app still assumes PID 10 pending evidence for a safe compatibility
-change. The unrelated experimental 540p build should not be used to test
-this SD lookup report.
+and the published v1.4.3 app still assumes PID 10. The unrelated experimental
+540p build should not be used to test this SD lookup report.
+
+## Compatibility candidate prepared
+
+**PROVEN (source / native owner-console lookup):** local **v1.4.4-rc1** now
+uses checked enumeration for timing and gamma instead of assuming PID 10.
+It checks immutable service identity, ambiguity and repeated mapping/table
+snapshots. All 32 relocated PIDs passed synthetic SD apply/undo; the owner's
+native read-only lookup found PID 10 and all 54 targets. Full provenance,
+test limits and tester steps are in [SYSMGR_DISCOVERY.md](SYSMGR_DISCOVERY.md).
+
+**UNKNOWN:** external CECH-2004A success and the original failure's actual
+cause. This candidate is not evidence of a NOR-specific fault or a confirmed
+model-specific fix. It has not been published as a stable release.

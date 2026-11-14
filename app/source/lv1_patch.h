@@ -25,6 +25,7 @@ typedef struct {
  uint64_t saved[PATCH_WORDS];
  uint64_t video_address[VIDEO_PROBE_WORDS];
  uint32_t video_context;
+ unsigned sysmgr_pid;
  unsigned family[PATCH_WORDS];
  int ready,have_saved,video_ready;
  /* 0 = metadata keeps the stock framebuffer height (current behaviour),

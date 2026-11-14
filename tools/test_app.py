@@ -20,8 +20,9 @@ def main():
     if not compiler:
         sys.exit("A host C compiler (clang or gcc) is required")
     flags = [compiler, "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
-             "-Wno-misleading-indentation", "-D_CRT_SECURE_NO_WARNINGS", "-Iapp/source", "-Itests"]
+             "-Wno-misleading-indentation", "-D_CRT_SECURE_NO_WARNINGS", "-Iapp/source", "-Itests", "-DSYSMGR_SYNTHETIC_TEST=1"]
     for name, sources in [
+        ("sysmgr", ["tests/test_sysmgr.c", "app/source/lv1_patch.c", "app/source/switch_flow.c"]),
         ("patch", ["tests/test_patch.c", "app/source/lv1_patch.c", "app/source/switch_flow.c"]),
         ("hd540-patch", ["tests/test_hd540_patch.c", "app/source/lv1_patch.c", "app/source/switch_flow.c", "app/source/hd540_patch.c"]),
         ("hd540-hdmi", ["tests/test_hd540_hdmi.c", "app/source/lv1_patch.c", "app/source/switch_flow.c", "app/source/hd540_patch.c", "app/source/hd540_hdmi.c"]),
@@ -40,8 +41,10 @@ def main():
         ("ui", ["tests/test_ui.c", "app/source/ui_layout.c"]),
         ("startup", ["tests/test_startup.c", "app/source/lv1_patch.c", "app/source/switch_flow.c", "app/source/ui_layout.c", "app/source/sd_default.c", "app/source/plugin_lifecycle.c", "app/source/gamma.c", "app/source/gamma_ipc.c"]),
     ]:
+        if "app/source/lv1_patch.c" in sources or name == "vsh-gamma":
+            sources = sources + ["app/source/sysmgr.c"]
         exe = out / (name + (".exe" if os.name == "nt" else ""))
-        test_flags = flags + (["-DTIMING_OFFLINE_TEST=1"] if name in ("patch", "hd540-patch", "hd540-hdmi", "hd540-scale", "hd540-cache", "vsh-hd540") else [])
+        test_flags = flags + (["-DTIMING_OFFLINE_TEST=1"] if name in ("sysmgr", "patch", "hd540-patch", "hd540-hdmi", "hd540-scale", "hd540-cache", "vsh-hd540") else [])
         if name == "vsh-hd540":
             test_flags += ["-DVSH_HD540_HOST_TEST=1"]
         if name == "vsh-video":
@@ -76,7 +79,7 @@ def main():
         from elftools.elf.elffile import ELFFile
         import ctypes
         dll = out / ("patch-audit.dll" if os.name == "nt" else "patch-audit.so")
-        subprocess.run(flags + ["-shared", "app/source/lv1_patch.c", "app/source/hd540_patch.c", "app/source/hd540_hdmi.c", "app/source/hd540_scale.c", "app/source/hd540_cache.c", "tests/audit_plan.c", "-o", str(dll)], cwd=ROOT, check=True)
+        subprocess.run(flags + ["-shared", "app/source/sysmgr.c", "app/source/lv1_patch.c", "app/source/hd540_patch.c", "app/source/hd540_hdmi.c", "app/source/hd540_scale.c", "app/source/hd540_cache.c", "tests/audit_plan.c", "-o", str(dll)], cwd=ROOT, check=True)
         audit = ctypes.CDLL(str(dll))
         audit.audit_count.restype = ctypes.c_int
         audit.audit_word.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint64)]
@@ -84,6 +87,20 @@ def main():
             elf = ELFFile(stream)
             segments = [(s["p_vaddr"], s.data()) for s in elf.iter_segments() if s["p_type"] == "PT_LOAD"]
             regions = [(s['p_vaddr'], s['p_memsz'], s['p_flags']) for s in elf.iter_segments() if s['p_type']=='PT_LOAD']
+        identity_dll = out / ("sysmgr-audit.dll" if os.name == "nt" else "sysmgr-audit.so")
+        production_flags = [f for f in flags if f != "-DSYSMGR_SYNTHETIC_TEST=1"]
+        subprocess.run(production_flags + ["-shared", "app/source/sysmgr.c", "tests/audit_sysmgr.c", "-o", str(identity_dll)], cwd=ROOT, check=True)
+        identity = ctypes.CDLL(str(identity_dll))
+        identity.audit_sysmgr_identity.argtypes = [ctypes.POINTER(ctypes.c_uint64)]
+        va = 0x80005e78
+        entry = next(data[va-base:va-base+32] for base,data in segments if base<=va and va+32<=base+len(data))
+        words = (ctypes.c_uint64*4)(*(int.from_bytes(entry[i:i+8], "big") for i in range(0,32,8)))
+        assert identity.audit_sysmgr_identity(words) == 1
+        for byte in range(32):
+            changed = (ctypes.c_uint64*4)(*words)
+            changed[byte//8] ^= 1 << ((7-byte%8)*8)
+            assert identity.audit_sysmgr_identity(changed) == 0
+        print("PASS: production sysmgr entry fingerprint matches private 4.93 and rejects a change in every byte")
         count = audit.audit_count()
         for i in range(count):
             va, word = ctypes.c_uint32(), ctypes.c_uint64()

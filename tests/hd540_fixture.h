@@ -21,7 +21,7 @@ static inline void hdmi_cache(unsigned vic)
 static inline void hdmi_fixture(void)
 {
  /* Append an unrelated page for the native AVI software cache. */
- put32(0x122000+9*0x20+0x14,0x122140);
+ put32(0x122414,0x122140);
  put64(0x122140,0x1c00000);put32(0x122148,0xc000c000);
  put32(0x122154,0x122160);ram[0x122158]=12;
  put64(0x122160,0x1d00000);put32(0x122168,0x80010000);

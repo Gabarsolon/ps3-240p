@@ -1,34 +1,22 @@
 #include "lv1_patch.h"
 #include "timing_payloads.h"
+#include "sysmgr.h"
 #include <stdio.h>
 #include <string.h>
 
 /* 4.93 layout evidence: docs/LV1_SYSMGR_SS_LOADADDR.md. Physical pages can
  * move every boot. Never assume the text/data segments are contiguous. */
-#define PROCESS_TABLE UINT64_C(0x36cdb0)
-#define DOMAIN_VTABLE UINT64_C(0x35ecb8)
 #define VIDEO_CONTEXT_POINTER 0xc000b440u
 #define VIDEO_CONTEXT_HOLDER 0xc000d4c8u
-typedef struct {uint64_t physical,size;uint32_t virtual_address;} mapping;
+typedef sysmgr_page mapping;
 static int bounded(uint64_t a,size_t n)
 {return a>=0x1000 && n<=LV1_HEAP_LIMIT && a<=LV1_HEAP_LIMIT-n;}
 static int fail(patch_context *c,const char *why)
 {snprintf(c->error,sizeof(c->error),"%s",why);if(c->log)c->log("PATCH ERROR: %s",why);return -1;}
 static uint64_t read64(patch_context *c,uint64_t a)
 {return bounded(a,8)&&!(a&7)?c->read(c->user,a):0;}
-static uint32_t read32(patch_context *c,uint64_t a)
-{uint64_t v=read64(c,a&~UINT64_C(7));return (uint32_t)(a&4?v:v>>32);}
 static int translate(const mapping *m,int count,uint32_t va,uint64_t *pa)
-{
- int found=0;
- for(int i=0;i<count;i++)if(va>=m[i].virtual_address &&
-     (uint64_t)va-m[i].virtual_address+8<=m[i].size){
-  if(found)return -1;
-  if(m[i].size>LV1_HEAP_LIMIT||!bounded(m[i].physical,(size_t)m[i].size))return -1;
-  *pa=m[i].physical+((uint64_t)va-m[i].virtual_address);found=1;
- }
- return found&&bounded(*pa,8)&&!(*pa&7)?0:-1;
-}
+{return sysmgr_translate(m,(unsigned)count,va,pa);}
 /* NTSC profile 2 has a different horizontal placement. PAL profile 3 also
  * has different sync edges/output control. Preserve each profile's fields. */
 static const uint64_t ntsc2[7]={
@@ -44,31 +32,14 @@ static const uint64_t pal3[7]={
 
 static int service_pages(patch_context *c,mapping pages[512],int *out_count)
 {
- int count=0;
- if(!c->read)return fail(c,"Missing LV1 transport");
- uint64_t proc=read64(c,PROCESS_TABLE+10*16+8);
- if(!bounded(proc,0x28)||(proc&7)||read32(c,proc)!=10)
-  return fail(c,"4.93 sysmgr PID 10 not found; check CFW syscalls");
- uint64_t domain=read64(c,proc+0x18);
- if(!bounded(domain,0x40)||(domain&7)||read64(c,domain)!=DOMAIN_VTABLE)
-  return fail(c,"4.93 protection-domain identity mismatch");
- uint64_t sentinel=domain+0x28,node=read32(c,domain+0x3c);
- uint64_t visited[512];
- while(node!=sentinel){
-  if(count==512||!bounded(node,0x20)||(node&7))return fail(c,"Invalid protection-page list");
-  for(int i=0;i<count;i++)if(visited[i]==node)return fail(c,"Protection-page list cycle");
-  visited[count]=node;
-  uint64_t physical=read64(c,node);
-  uint32_t va=read32(c,node+8);
-  unsigned shift=(unsigned)(read64(c,node+0x18)>>56);
-  /* Only ordinary RAM mappings are relevant; MMIO is never read/written. */
-  if(shift<12||shift>32)return fail(c,"Unexpected protection-page size");
-  pages[count].physical=physical;pages[count].virtual_address=va;
-  pages[count].size=UINT64_C(1)<<shift;
-  count++;node=read32(c,node+0x14);
- }
- if(!count)return fail(c,"Empty protection-page list");
- *out_count=count;return 0;
+ sysmgr_report report;unsigned count=0;
+ int rc=sysmgr_discover(c->read,c->user,pages,&count,&report);
+ if(c->log&&(rc||!c->ready||c->sysmgr_pid!=report.pid))
+  c->log("sysmgr scan: occupied=%u domains=%u matches=%u slot10=%llx headerPID=%u selectedPID=%u pages=%u",
+   report.occupied,report.domains,report.matches,(unsigned long long)report.slot10_pointer,
+   report.slot10_pid,report.pid,count);
+ if(rc)return fail(c,report.error);
+ c->sysmgr_pid=report.pid;*out_count=(int)count;return 0;
 }
 int patch_map_targets(patch_context *c,const uint32_t *va,uint64_t *pa,unsigned n)
 {

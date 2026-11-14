@@ -14,6 +14,7 @@
 static uint64_t read_word(void *u,uint64_t a)
 {
  (void)u;
+ if(a>=0x1005e78&&a<0x1005e98){uint64_t v=0;for(unsigned i=0;i<8;i++)v=(v<<8)|(a-0x1005e78+i);return v;}
  if(a==0x1000000+(VSCALE_ENABLE_VA-0x80000000u))return STOCK_VSCALE_ENABLE_WORD;
  if(a==0x1000000+(VSCALE_FACTOR_VA-0x80000000u))return STOCK_VSCALE_FACTOR_WORD;
  if(a==0x36cdb0+10*16+8)return 0x120000;

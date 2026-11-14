@@ -27,7 +27,7 @@ def sha256_file(path: Path) -> str:
             h.update(chunk)
     return h.hexdigest()
 
-def main(sdk_path: str, experimental_hd540=False):
+def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False):
     sdk = Path(sdk_path).resolve()
     if not sdk.exists():
         raise FileNotFoundError(f"PS3DK SDK not found at {sdk}")
@@ -36,13 +36,16 @@ def main(sdk_path: str, experimental_hd540=False):
     app_build_dir = ROOT / "app" / "build"
     staging_dir = build_dir / "staging"
     deliverables_dir = ROOT / "deliverables"
-    if experimental_hd540:
-        build_dir = ROOT / "build" / "hd540"
+    if experimental_hd540 or pid_compatibility:
+        build_dir = ROOT / "build" / ("hd540" if experimental_hd540 else "pid-compat")
         app_build_dir = build_dir / "app"
         staging_dir = build_dir / "staging"
         deliverables_dir = build_dir / "deliverables"
     helper = (ROOT / "build/hd540/plugin/vsh_240p.sprx") if experimental_hd540 else (ROOT / "plugin/vsh_240p.sprx")
     version = "01.68" if experimental_hd540 else APP_VERSION
+    if pid_compatibility:
+        helper = ROOT / "build/pid-compat/plugin/vsh_240p.sprx"
+        version = "01.44"
     if not helper.exists():
         raise FileNotFoundError(f"Build the matching helper first: {helper}")
 
@@ -69,7 +72,8 @@ def main(sdk_path: str, experimental_hd540=False):
     toolchain_cmake = sdk / "cmake" / "ps3-ppu-toolchain.cmake"
     run("cmake", "-S", ROOT / "app", "-B", app_build_dir, "-G", "Ninja",
         f"-DCMAKE_TOOLCHAIN_FILE={toolchain_cmake}",
-        f"-DCRT_ENABLE_HD540={'ON' if experimental_hd540 else 'OFF'}")
+        f"-DCRT_ENABLE_HD540={'ON' if experimental_hd540 else 'OFF'}",
+        f"-DCRT_APP_VERSION={'1.4.4-rc1' if pid_compatibility else ''}")
     run("cmake", "--build", app_build_dir, "--target", "ps3-240p-app")
 
     elf_file = app_build_dir / "ps3-240p-app.elf"
@@ -112,6 +116,8 @@ def main(sdk_path: str, experimental_hd540=False):
     pkg_tool = sdk / "bin" / "pkg.exe"
     finalize_tool = sdk / "bin" / "package_finalize.exe"
     out_pkg = deliverables_dir / ("CRT-Toolset-1.5.0-dev19.pkg" if experimental_hd540 else "CRT-Toolset.pkg")
+    if pid_compatibility:
+        out_pkg = deliverables_dir / "CRT-Toolset-1.4.4-rc1.pkg"
 
     run(pkg_tool, "--contentid", CONTENT_ID, f"{staging_dir}/", out_pkg)
     run(finalize_tool, out_pkg)
@@ -148,6 +154,7 @@ def main(sdk_path: str, experimental_hd540=False):
         "app_id": APP_ID,
         "app_version": version,
         "experimental_hd540": experimental_hd540,
+        "pid_compatibility": pid_compatibility,
         "validation": "Host/package checks only; experimental HDMI 540p waveform and recovery unverified" if experimental_hd540 else "Proportional 240p/288p typography with non-overlapping line spacing and CRT overscan margins",
         "package": out_pkg.name,
         "size_bytes": pkg_size,
@@ -157,6 +164,8 @@ def main(sdk_path: str, experimental_hd540=False):
             for name, data in sorted(packaged.items())
         ]
     }
+    if pid_compatibility:
+        manifest["validation"] = "Bounded sysmgr discovery host/private-firmware checks; external CECH-2004A compatibility unverified"
 
     manifest_path = deliverables_dir / "package_manifest.json"
     with open(manifest_path, "w", encoding="utf-8") as f:
@@ -175,7 +184,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Build PS3 240p Application PKG")
     parser.add_argument("--sdk", default=os.environ.get("PS3DK", r"E:\tools\ps3dk\ps3-sdk-v0.26.0-windows-x86_64"),
                         help="Path to PS3DK root directory")
-    parser.add_argument("--experimental-hd540", action="store_true",
+    variants = parser.add_mutually_exclusive_group()
+    variants.add_argument("--experimental-hd540", action="store_true",
                         help="Build a separate development package under build/hd540 without replacing release assets")
+    variants.add_argument("--pid-compatibility", action="store_true",
+                          help="Build SD-only v1.4.4-rc1 under build/pid-compat without replacing release assets")
     args = parser.parse_args()
-    main(args.sdk, args.experimental_hd540)
+    main(args.sdk, args.experimental_hd540, args.pid_compatibility)

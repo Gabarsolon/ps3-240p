@@ -23,6 +23,7 @@ static void set(void *u,uint64_t a,uint64_t v)
  * far from the historically observed addresses and from each other. */
 static uint64_t physical(uint32_t va)
 {
+ if((va&0xfffff000u)==0x80005000u)return 0x1900000+(va&0xfff);
  if((va&0xfffff000u)==0x80039000u)return 0x1800000+(va&0xfff);
  if((va&0xfffff000u)==0x80038000u)return 0x1250000+(va&0xfff);
  if((va&0xfffff000u)==0xc0000000u)return 0x1a30000+(va&0xfff);
@@ -47,12 +48,13 @@ static void setup(void)
  put64(0x36cdb0+10*16+8,0x120000);put32(0x120000,10);put64(0x120018,0x121000);
  put64(0x121000,0x35ecb8);put32(0x12103c,0x122000);
  unsigned vas[]={0x80039000,0x80038000,0xc0000000,0xc000b000,0xc000d000,0xa0023000,0xa0024000,
-  0x80002000,0x80003000,0xc000a000};
- for(int i=0;i<10;i++){
-  uint64_t node=0x122000+i*0x20;
+  0x80002000,0x80003000,0xc000a000,0x80005000};
+ for(int i=0;i<11;i++){
+  uint64_t node=i==10?0x122400:0x122000+i*0x20;
   put64(node,physical(vas[i]));put32(node+8,vas[i]);
-  put32(node+0x14,i==9?0x121028:(uint32_t)node+0x20);ram[node+0x18]=12;
+  put32(node+0x14,i==10?0x121028:i==9?0x122400:(uint32_t)node+0x20);ram[node+0x18]=12;
  }
+ for(unsigned i=0;i<32;i++)ram[physical(0x80005e78)+i]=(unsigned char)i;
  /* Seed both verified code words before the first resolve. */
  put64(physical(0x80002f48),STOCK_VSCALE_ENABLE_WORD);
  put64(physical(0x80003100),STOCK_VSCALE_FACTOR_WORD);

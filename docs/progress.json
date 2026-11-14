@@ -1,6 +1,6 @@
 {
   "updated": "2026-11-14",
-  "note": "PROVEN: v1.5.0-dev19 HDMI 540p prerelease published with exact owner-tested package and verified downloadable SHA-256. Source/tag pushed; v1.4.3 remains latest stable. CLAIMED owner confirms 540p works; HD CRT/component/game coverage remains UNKNOWN.",
+  "note": "PROVEN: checked sysmgr discovery replaces PID-10 assumptions for timing/gamma; all 32 synthetic PID positions, private-firmware checks and native owner lookup passed. Local SD v1.4.4-rc1 built; external CECH-2004A result and RC visual output unverified (docs/SYSMGR_DISCOVERY.md).",
   "stages": [
     {
       "name": "Static analysis & claim verification (hypercalls, netemu, RSX attr 0x100)",
