@@ -109,10 +109,14 @@ normal exit. That run validated native lookup, not analog output; the later
 owner CRT report above is separate evidence. No inference about a console
 freeze is made, and HDMI behavior remains unverified.
 
-**UNKNOWN:** whether the CECH-2004A report was actually caused by a shifted
-PID, and whether this RC resolves it. There is no test result from that
-console yet. A valid alternate PID is covered synthetically, not demonstrated
-on different physical hardware. See [the original report](CECH2004A_LOOKUP_REPORT.md).
+**PROVEN (later supplied external log, 2026-11-14):** the affected tester's
+RC log identifies one matching service at PID 9, resolves all 54 targets
+and records a successful NTSC transaction/cache match. **CLAIMED (tester):**
+app/XMB 240p, timed recovery and background correction work. **INFERRED:**
+the shifted PID explains their original lookup failure. Separate PS1 crop
+and audio issues remain open; see [the updated report](CECH2004A_LOOKUP_REPORT.md)
+and [audio investigation](PS1_AUDIO_REPORT.md). This does not establish
+other-model, gamma or external PAL 288p compatibility.
 
 ## Tester instructions
 

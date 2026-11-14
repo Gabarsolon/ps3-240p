@@ -1,6 +1,6 @@
 {
   "updated": "2026-11-14",
-  "note": "PROVEN offline: retail 4.93 PC raster/clock/HDMI entries and native monitor-selector dispatch identified. Next: trace device-backend acceptance and source-buffer contracts before a timed 1280x768 HDMI prototype. No live PC-mode test performed (docs/DISPLAY_PRESETS_INVESTIGATION.md).",
+  "note": "PROVEN: native 1280x768 HDMI passed timed capture/receiver/restoration checks; public-only HEN diagnostic control installed through webMAN and ran on CFW. Actual HEN runtime remains untested. Supplied RC log confirms sysmgr PID 9; PS1 audio/crop issue remains open. See docs/DISPLAY_PRESET_PROBE.md, docs/HEN_DIAGNOSTIC.md and docs/PS1_AUDIO_REPORT.md.",
   "workstreams": [
     {
       "name": "240p / 288p and analog gamma",
@@ -9,7 +9,7 @@
     },
     {
       "name": "Sysmgr PID compatibility",
-      "status": "PROVEN: checked discovery implemented and v1.4.4-rc1 published. CLAIMED: owner CRT test works. UNKNOWN: external CECH-2004A result.",
+      "status": "PROVEN in supplied external log: sysmgr PID 9 and all 54 targets resolved. CLAIMED: CECH-2004A 240p works; PS1 audio/crop issues remain open.",
       "evidence": "[PID investigation](docs/SYSMGR_DISCOVERY.md)"
     },
     {
@@ -19,13 +19,18 @@
     },
     {
       "name": "Resolution presets and scaling",
-      "status": "PROVEN offline: PC timing/clock/HDMI entries and native monitor-selector dispatch found. UNKNOWN: device-backend acceptance, live presets and game compatibility.",
-      "evidence": "[Roadmap](docs/DISPLAY_PRESETS_ROADMAP.md); [findings](docs/DISPLAY_PRESETS_INVESTIGATION.md)"
+      "status": "PROVEN on owner HDMI setup: native 1280x768, receiver-reported progressive, 15-second hold and stock restoration. Experimental helper; other modes, scaling controls, games and HEN untested.",
+      "evidence": "[Native preset proof](docs/DISPLAY_PRESET_PROBE.md); [roadmap](docs/DISPLAY_PRESETS_ROADMAP.md)"
+    },
+    {
+      "name": "HEN diagnostic and port",
+      "status": "PROVEN: isolated diagnostic builds pass offline checks; public-only package installed/launched on owner CFW and produced a report. Actual HEN runtime and ordinary-HEN 240p/288p remain unverified.",
+      "evidence": "[Diagnostic and CFW smoke proof](docs/HEN_DIAGNOSTIC.md); [port requirements](docs/HEN_PORT_PLAN.md)"
     },
     {
       "name": "Community compatibility and measurements",
-      "status": "Open: PS1 mode transitions, integer scaling, input lag, component, PS2/BC models and Mega Man 9/10.",
-      "evidence": "[Tracked requests](docs/DISPLAY_PRESETS_ROADMAP.md#other-community-requests-to-track)"
+      "status": "Open: reported PS1 audio/crop, mode transitions, integer scaling, input lag, component, PS2/BC models and Mega Man 9/10.",
+      "evidence": "[PS1 report](docs/PS1_AUDIO_REPORT.md); [tracked requests](docs/DISPLAY_PRESETS_ROADMAP.md#other-community-requests-to-track)"
     }
   ],
   "stages": [

@@ -1,7 +1,28 @@
-# CECH-2004A v1.4.3 lookup failure report
+# CECH-2004A lookup failure and v1.4.4-rc1 result
 
 Checkpoint: 2026-11-14. Reporter identity and console are not independently
-verified. Compatibility on the reported console remains unverified.
+verified. The later supplied RC log identifies PID 9 and the tester reports
+successful 240p output, with separate PS1 audio/crop issues described below.
+
+## External RC result (supersedes the original pending-result statements)
+
+**PROVEN (supplied RC log):** timestamp `465778` reports one identity match,
+selected PID 9, an empty slot 10 and 109 pages. Timestamp `465782` resolves
+all 54 targets; the NTSC transaction and analog cache match subsequently
+succeed. **INFERRED:** the fixed-PID assumption explains the reported
+v1.4.3 lookup failure on this console; NOR hardware alone was not the cause.
+
+**CLAIMED (tester):** v1.4.4-rc1 works in the app and XMB, timed 240p recovery
+and background correction. The tester also reports lower-pitched/crackling
+audio and some crop in NTSC Toy Story 2 and Battle Hunter at 240p.
+These separate issues remain **UNKNOWN** in cause; see
+[PS1 audio/crop investigation](PS1_AUDIO_REPORT.md). No external 288p,
+gamma, other-firmware or other-model success is claimed from this report.
+
+## Original v1.4.3 failure and investigation
+
+The pending-result statements in this historical section describe the
+initial report; the external RC result above supersedes them.
 
 **CLAIMED (external tester, message relayed by owner):** a PAL Slim
 CECH-2004A (NOR), Evilnat 4.93 CEX + Cobra 8.5, with full CFW syscalls

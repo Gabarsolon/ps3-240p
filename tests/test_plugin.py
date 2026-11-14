@@ -19,6 +19,7 @@ The contract is therefore checked on the COMPILED artifact, not on the source:
 Run:  python tests/test_plugin.py [path/to/vsh_240p.elf]
 """
 import pathlib
+import argparse
 import struct
 import sys
 
@@ -191,10 +192,9 @@ def check_elf(elf):
                 stop_descriptor=symbols["module_stop"]["value"])
 
 
-def check_prx(addresses):
+def check_prx(addresses, marker=b"vsh_240p"):
     """The packed PRX must export module_start and module_stop correctly."""
     data = PRX.read_bytes()
-    marker = b"vsh_240p"
     at = data.find(marker)
     assert at >= 0, "packed PRX does not contain the module name"
     info = at - 4
@@ -233,10 +233,9 @@ def check_prx(addresses):
     return exports
 
 
-def check_module_info():
+def check_module_info(marker=b"vsh_240p"):
     """The module-info version byte must match the proven VSH plugin."""
     data = PRX.read_bytes()
-    marker = b"vsh_240p"
     at = data.find(marker)
     assert at >= 0, "packed PRX does not contain the module name"
     info = at - 4
@@ -249,9 +248,15 @@ def check_module_info():
 
 def main():
     global PRX
-    elf_path = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else ELF
-    if len(sys.argv) > 1:
-        PRX = elf_path.with_suffix(".prx")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("elf", nargs="?", type=pathlib.Path, default=ELF)
+    parser.add_argument("--module-name", default="vsh_240p")
+    args = parser.parse_args()
+    elf_path = args.elf
+    PRX = elf_path.with_suffix(".prx")
+    marker = args.module_name.encode("ascii")
+    if not 1 <= len(marker) <= 27:
+        parser.error("module name must contain 1..27 ASCII characters")
     if not elf_path.exists():
         sys.exit(f"missing {elf_path}; run tools/build_plugin.py first")
     if not PRX.exists():
@@ -259,8 +264,8 @@ def main():
 
     elf = Elf64BE(elf_path.read_bytes())
     addresses = check_elf(elf)
-    exports = check_prx(addresses)
-    minor = check_module_info()
+    exports = check_prx(addresses, marker)
+    minor = check_module_info(marker)
 
     print("VSH plugin loader contract:")
     print(f"  exit_thread  code @ 0x{addresses['exit_entry']:08x}  (lv2 syscall 41, no blr)")

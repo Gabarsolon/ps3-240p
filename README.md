@@ -31,12 +31,13 @@ Current feature status (separate from the weighted research estimate):
 | Feature | Status / remaining work | Evidence |
 |---|---|---|
 | 240p / 288p and analog gamma | Released; owner reports success. Wider connector/game coverage and electrical waveform measurement remain open. | [Release and calibration notes](docs/CRT_CALIBRATION.md); [SD results](docs/RELEASE_v1.4.4-rc1.md) |
-| Sysmgr PID compatibility | PROVEN: checked discovery implemented and v1.4.4-rc1 published. CLAIMED: owner CRT test works. UNKNOWN: external CECH-2004A result. | [PID investigation](docs/SYSMGR_DISCOVERY.md) |
+| Sysmgr PID compatibility | PROVEN in supplied external log: sysmgr PID 9 and all 54 targets resolved. CLAIMED: CECH-2004A 240p works; PS1 audio/crop issues remain open. | [PID investigation](docs/SYSMGR_DISCOVERY.md) |
 | HDMI 540p | PROVEN: full XMB picture and receiver-reported progressive output in timed dev19 test. UNKNOWN: HD CRT, component and game compatibility; no permanent enforcement. | [540p prerelease](docs/RELEASE_v1.5.0-dev19.md) |
-| Resolution presets and scaling | PROVEN offline: PC timing/clock/HDMI entries and native monitor-selector dispatch found. UNKNOWN: device-backend acceptance, live presets and game compatibility. | [Roadmap](docs/DISPLAY_PRESETS_ROADMAP.md); [findings](docs/DISPLAY_PRESETS_INVESTIGATION.md) |
-| Community compatibility and measurements | Open: PS1 mode transitions, integer scaling, input lag, component, PS2/BC models and Mega Man 9/10. | [Tracked requests](docs/DISPLAY_PRESETS_ROADMAP.md#other-community-requests-to-track) |
+| Resolution presets and scaling | PROVEN on owner HDMI setup: native 1280x768, receiver-reported progressive, 15-second hold and stock restoration. Experimental helper; other modes, scaling controls, games and HEN untested. | [Native preset proof](docs/DISPLAY_PRESET_PROBE.md); [roadmap](docs/DISPLAY_PRESETS_ROADMAP.md) |
+| HEN diagnostic and port | PROVEN: isolated diagnostic builds pass offline checks; public-only package installed/launched on owner CFW and produced a report. Actual HEN runtime and ordinary-HEN 240p/288p remain unverified. | [Diagnostic and CFW smoke proof](docs/HEN_DIAGNOSTIC.md); [port requirements](docs/HEN_PORT_PLAN.md) |
+| Community compatibility and measurements | Open: reported PS1 audio/crop, mode transitions, integer scaling, input lag, component, PS2/BC models and Mega Man 9/10. | [PS1 report](docs/PS1_AUDIO_REPORT.md); [tracked requests](docs/DISPLAY_PRESETS_ROADMAP.md#other-community-requests-to-track) |
 
-_Last update: 2026-11-14. PROVEN offline: retail 4.93 PC raster/clock/HDMI entries and native monitor-selector dispatch identified. Next: trace device-backend acceptance and source-buffer contracts before a timed 1280x768 HDMI prototype. No live PC-mode test performed (docs/DISPLAY_PRESETS_INVESTIGATION.md)._
+_Last update: 2026-11-14. PROVEN: native 1280x768 HDMI passed timed capture/receiver/restoration checks; public-only HEN diagnostic control installed through webMAN and ran on CFW. Actual HEN runtime remains untested. Supplied RC log confirms sysmgr PID 9; PS1 audio/crop issue remains open. See docs/DISPLAY_PRESET_PROBE.md, docs/HEN_DIAGNOSTIC.md and docs/PS1_AUDIO_REPORT.md._
 <!-- progress:end -->
 
 The progress block is generated from `docs/progress.json`; percentages estimate work, not electrical verification.
@@ -46,8 +47,10 @@ The progress block is generated from `docs/progress.json`; percentages estimate 
 [v1.4.4-rc1](https://github.com/Gabarsolon/ps3-240p/releases/tag/v1.4.4-rc1)
 targets the v1.4.3 "sysmgr PID 10 not found" error.
 **PROVEN (source/tests):** timing and gamma use checked service discovery
-across 32 slots. **CLAIMED (owner):** the RC works on their CRT.
-**UNKNOWN:** success on the external CECH-2004A that reported the error.
+across 32 slots. **PROVEN (supplied tester log):** the affected console uses
+PID 9 and the RC resolves all 54 targets. **CLAIMED (tester):** app/XMB 240p,
+timed recovery and background correction work; PS1 audio/crop issues remain
+open. [Audio report](docs/PS1_AUDIO_REPORT.md).
 [Install/test steps and evidence](docs/RELEASE_v1.4.4-rc1.md).
 This SD build excludes experimental 540p; stable v1.4.3 remains available.
 
@@ -187,10 +190,13 @@ The app builder packages the tracked `plugin/vsh_240p.sprx`. Rebuilding the help
 
 ## Research and history
 
+- [Native HDMI PC-preset probe](docs/DISPLAY_PRESET_PROBE.md): **PROVEN on the owner setup:** 1280x768 with a visible XMB picture, receiver-reported progressive scan, a 15-second hold and stock 1080p restoration. This isolated developer helper is not an app-menu release; other PC modes, game compatibility and HEN remain untested.
+- [HEN port plan](docs/HEN_PORT_PLAN.md): capability separation and an isolated diagnostic are being developed; no ordinary-HEN 240p/288p support is established.
+
 - [Resolution presets and scaling roadmap](docs/DISPLAY_PRESETS_ROADMAP.md) and [offline retail 4.93 investigation](docs/DISPLAY_PRESETS_INVESTIGATION.md). **PROVEN in source/binary:** existing PC-mode entries include 1280x768, 1280x1024 and 1920x1200. **UNKNOWN:** retail GameOS activation, live output and game compatibility; no new preset is released.
 
 - [540p for HD CRTs: research](docs/HD_CRT_540P.md), [dev18 detected progressive HDMI output](docs/HD540_DEV18.md) and [dev19 app-menu pitch fix](docs/HD540_DEV19.md). **PROVEN on the tested capture setup:** the full XMB picture fits and the receiver reports 1920x540/progressive. Dev19 fixes a stale app-pitch check that aborted owner-launched tests; its actual app-menu run held the candidate for 15.220 seconds and restored stock 1080i/source pitch with no reported error. Native scanout samples alternate rows of the unchanged 1080-line source. **UNKNOWN:** measured refresh, HD CRT/component behavior and game coverage. Experimental; absent from stable v1.4.3.
-- [CECH-2004A lookup failure report and read-only diagnostic](docs/CECH2004A_LOOKUP_REPORT.md). **CLAIMED (tester):** v1.4.3 cannot locate PID 10. **PROVEN:** v1.4.4-rc1 replaces the fixed-PID lookup with checked discovery. **UNKNOWN:** the external tester's result and whether their original failure was caused by a shifted PID, unavailable LV1 reads or a different layout. See [discovery evidence](docs/SYSMGR_DISCOVERY.md).
+- [CECH-2004A lookup failure and RC result](docs/CECH2004A_LOOKUP_REPORT.md). **PROVEN (supplied log):** the affected tester's service is PID 9 and the RC resolves it. **CLAIMED:** 240p works; separate PS1 audio/crop issues are open. See [discovery evidence](docs/SYSMGR_DISCOVERY.md).
 - [Current geometry evidence and test results](docs/GEOMETRY_STATUS_2026-11-13.md).
 - [Earlier app review and failed experiments](docs/APP_REVIEW_2026-11-11.md).
 - [Verified research](docs/RESEARCH.md), [AV-manager trace](docs/LV1_AV_TRACE.md), [PS1/PS2 video paths](docs/BC_PS1_EMULATOR_VIDEO.md), and [live page resolution](docs/LV1_SYSMGR_SS_LOADADDR.md).

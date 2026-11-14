@@ -1,7 +1,10 @@
 # Display preset investigation: retail 4.93
 
-Started 2026-11-14. Offline work only: no console requests, mode changes,
-installations or persistent settings changes in this investigation.
+Started 2026-11-14 with offline analysis. The subsequent
+[native timed probe](DISPLAY_PRESET_PROBE.md) now establishes 1280 x 768 HDMI
+on the owner's console, with visible capture, receiver-reported progressive
+scan and stock restoration. Initial activation unknowns below are historical
+for that preset; other outputs, games, HEN and other PC modes remain unknown.
 See the [approved roadmap](DISPLAY_PRESETS_ROADMAP.md).
 
 ## Evidence scope
@@ -138,4 +141,7 @@ Before a live test:
 4. Only then test one preset, checking receiver signal/scan, visible geometry
    and restoration separately. XMB success will not prove game compatibility.
 
-**UNKNOWN:** all new live PC-mode results. No new build or release is claimed.
+**PROVEN (subsequent owner-console probe):** the first native 1280 x 768
+HDMI candidate now passes the timed test and restoration. See
+[complete results and build scope](DISPLAY_PRESET_PROBE.md). This is an
+isolated developer helper, not a new app-menu release or permanent mode.

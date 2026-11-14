@@ -1,5 +1,14 @@
 # CRT Toolset v1.4.4-rc1 — sysmgr PID compatibility test
 
+**Post-publication update (2026-11-14):** **PROVEN in the supplied log:** the
+affected tester's sysmgr is PID 9 and this RC resolves all 54 targets.
+**CLAIMED (tester):** 240p works in XMB/app, timed recovery and background
+correction. PS1 audio pitch/crackling and crop are separately reported and
+unresolved; this remains a prerelease. See the
+[updated model report](https://github.com/Gabarsolon/ps3-240p/blob/main/docs/CECH2004A_LOOKUP_REPORT.md)
+and [audio investigation](https://github.com/Gabarsolon/ps3-240p/blob/main/docs/PS1_AUDIO_REPORT.md).
+The original publication-time assessment below is historical.
+
 This SD prerelease targets the v1.4.3 error:
 
 ```text

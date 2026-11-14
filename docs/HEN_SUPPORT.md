@@ -1,5 +1,12 @@
 # CFW and HEN compatibility
 
+See the [concrete HEN port plan](HEN_PORT_PLAN.md) for the 2026-11-14 review,
+capability separation, diagnostic requirements and hardware-assisted scope.
+**PROVEN (upstream source):** this HEN revision's LV1 peek helper invokes a
+poke-based precheck. Do not treat the current app's LV1 inspection as a
+strictly read-only HEN diagnostic; the first diagnostic should issue no LV1
+operations. Source and exact limitations are documented in the port plan.
+
 **PROVEN (project source):** the timing patcher needs working LV1 reads and
 writes to the live `sysmgr_ss` timing/encoder records. It tries PS3MAPI LV1
 peek/poke, then CFW syscalls 8/9, and requires the supported 4.93 memory layout

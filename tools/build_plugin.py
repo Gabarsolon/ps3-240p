@@ -48,13 +48,15 @@ def sha256(path):
 
 
 def main():
-    global ELF, PRX, SPRX
+    global ELF, PRX, SPRX, SOURCE
     parser = argparse.ArgumentParser()
     variants = parser.add_mutually_exclusive_group()
     variants.add_argument("--experimental-hd540", action="store_true",
                         help="Build experimental helper under build/hd540; preserve the release helper")
     variants.add_argument("--pid-compatibility", action="store_true",
                           help="Build the SD PID compatibility helper under build/pid-compat")
+    variants.add_argument("--display-probe", action="store_true",
+                          help="Build standalone timed native PC-mode probe under build/display-probe")
     parser.add_argument("--name", default="vsh_240p")
     parser.add_argument("--keep-elf", action="store_true",
                         help="Keep the intermediate ELF (default: keep it, it is the packer input)")
@@ -62,10 +64,14 @@ def main():
     if args.experimental_hd540:
         from build_hd540_cache import build
         build()
-    if args.experimental_hd540 or args.pid_compatibility:
-        directory = ROOT / "build" / ("hd540" if args.experimental_hd540 else "pid-compat") / "plugin"
+    if args.experimental_hd540 or args.pid_compatibility or args.display_probe:
+        directory = ROOT / "build" / ("hd540" if args.experimental_hd540 else "display-probe" if args.display_probe else "pid-compat") / "plugin"
         directory.mkdir(parents=True, exist_ok=True)
         ELF, PRX, SPRX = (directory / ("vsh_240p" + suffix) for suffix in (".elf", ".prx", ".sprx"))
+    if args.display_probe:
+        SOURCE = ROOT / "experiments/display_probe/plugin.c"
+        if args.name == "vsh_240p":
+            args.name = "crt_display_probe"
 
     gcc = SDK / "ppu" / "bin" / "ppu-gcc.exe"
     linker = SIBLING / "game" / "native-prx.ld"
@@ -90,6 +96,10 @@ def main():
         "-lio",
         "-o", ELF,
     ]
+    if args.display_probe:
+        for old in (PLUGIN / "vsh_gamma.c", ROOT / "app/source/sysmgr.c", PLUGIN / "gamma_service.c"):
+            compile_cmd.remove(old)
+        compile_cmd += [ROOT / "experiments/display_probe/native.c", ROOT / "experiments/display_probe/service.c"]
     if args.experimental_hd540:
         compile_cmd[1:1] = ["-DCRT_ENABLE_HD540=1"]
         compile_cmd += [PLUGIN / "vsh_hd540.c", PLUGIN / "hd540_service.c",
