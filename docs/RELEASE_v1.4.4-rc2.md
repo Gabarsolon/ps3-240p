@@ -1,5 +1,7 @@
 # v1.4.4-rc2: PS1 audio diagnostic
 
+[Download the diagnostic prerelease](https://github.com/Gabarsolon/ps3-240p/releases/tag/v1.4.4-rc2).
+
 **Purpose:** collect game-time evidence for the CECH-2004A report of lowered
 pitch and crackling in 240p. **CLAIMED (owner, 2026-11-14):** Toy Story 2 and
 Battle Hunter sound normal in 240p on the owner's CRT setup. The external
@@ -117,3 +119,7 @@ or the external console. Evidence stays private in
 **PROVEN (artifact):** package version `01.45`, 292528 bytes, SHA-256
 `9ec4bfb7325f68f57c653cb6ae5249754b3d4468fa24eb7e52921a85941b7779`.
 The displayed version is `1.4.4-rc2`. The stable release remains unchanged.
+
+**PROVEN (publication/readback):** GitHub lists the prerelease at source
+commit `65cfdc91e5cc4f926711eb23fa7b8d1b9ab3ed36` with the PKG, manifest and
+`TESTING.txt`. Its reported PKG digest and size match the artifact above.

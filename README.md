@@ -38,7 +38,7 @@ Current feature status (separate from the weighted research estimate):
 | HEN diagnostic and port | PROVEN: diagnostic builds and public-only CFW smoke pass. Additional native/gamma/mapping paths inspected offline; no ordinary-HEN 240p/288p route established. Actual HEN runtime untested. | [Alternative paths](docs/HEN_ALTERNATIVE_PATHS.md); [diagnostic scope](docs/HEN_DIAGNOSTIC.md) |
 | Community compatibility and measurements | CLAIMED: owner CRT 240p audio is normal in both reported games. PROVEN: bounded read-only config logger works during Battle Hunter alongside the SD helper; rc2 diagnostic package passes host/loader/member checks. UNKNOWN: external pitch/crackle cause and fix; physical analog audio rate remains unmeasured. | [PS1 report](docs/PS1_AUDIO_REPORT.md); [rc2 diagnostic](docs/RELEASE_v1.4.4-rc2.md); [tracked requests](docs/DISPLAY_PRESETS_ROADMAP.md#other-community-requests-to-track) |
 
-_Last update: 2026-11-14. CLAIMED: owner reports normal 240p analog audio in both games. PROVEN: bounded read-only game-time config logger runs on owner CFW; v1.4.4-rc2 diagnostic package passes host, loader and member checks. UNKNOWN: external pitch/crackle cause; no audio correction released._
+_Last update: 2026-11-14. Published v1.4.4-rc2 PS1 audio diagnostic; GitHub PKG digest matches the checked artifact. PROVEN: bounded observer runs during owner Battle Hunter; host/loader/package checks pass. CLAIMED: owner CRT 240p audio is normal. UNKNOWN: external pitch/crackle cause; no audio fix claimed._
 <!-- progress:end -->
 
 The progress block is generated from `docs/progress.json`; percentages estimate work, not electrical verification.

@@ -1,6 +1,6 @@
 {
   "updated": "2026-11-14",
-  "note": "CLAIMED: owner reports normal 240p analog audio in both games. PROVEN: bounded read-only game-time config logger runs on owner CFW; v1.4.4-rc2 diagnostic package passes host, loader and member checks. UNKNOWN: external pitch/crackle cause; no audio correction released.",
+  "note": "Published v1.4.4-rc2 PS1 audio diagnostic; GitHub PKG digest matches the checked artifact. PROVEN: bounded observer runs during owner Battle Hunter; host/loader/package checks pass. CLAIMED: owner CRT 240p audio is normal. UNKNOWN: external pitch/crackle cause; no audio fix claimed.",
   "workstreams": [
     {
       "name": "240p / 288p and analog gamma",
