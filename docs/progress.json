@@ -1,6 +1,6 @@
 {
   "updated": "2026-11-14",
-  "note": "Owner approved official promotion of the unchanged v1.4.4-rc1 SD package. CLAIMED: ps1_netemu resolves the external PS1 audio/crop report. PROVEN: timed stock HDMI 480p recovers but its OBS picture is black; HDMI low-line timing remains untested.",
+  "note": "Published v1.4.4-rc1 as the official Latest SD release; all three asset IDs, hashes and sizes are unchanged and the latest-release endpoint is verified. CLAIMED: ps1_netemu resolves the external PS1 audio/crop report. HDMI 240p/288p remains untested; stock 480p is black in OBS.",
   "workstreams": [
     {
       "name": "240p / 288p and analog gamma",
@@ -34,7 +34,7 @@
     },
     {
       "name": "Community compatibility and measurements",
-      "status": "CLAIMED: external tester resolves PS1 audio/crop by selecting ps1_netemu; owner reports normal CRT audio. PROVEN: rc1 assets retain their checked digests; the owner approved official release promotion. UNKNOWN: exact emulator/setup difference, integer scaling and latency.",
+      "status": "CLAIMED: external tester resolves PS1 audio/crop by selecting ps1_netemu; owner reports normal CRT audio. PROVEN: rc1 assets retain their checked digests; the unchanged rc1 build is now the official Latest SD release. UNKNOWN: exact emulator/setup difference, integer scaling and latency.",
       "evidence": "[PS1 report](docs/PS1_AUDIO_REPORT.md); [rc2 diagnostic](docs/RELEASE_v1.4.4-rc2.md); [tracked requests](docs/DISPLAY_PRESETS_ROADMAP.md#other-community-requests-to-track)"
     }
   ],
