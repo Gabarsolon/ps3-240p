@@ -194,3 +194,45 @@ and allows a bounded 20-second recovery interval. Evidence:
 **Current boundary:** no low-line HDMI candidate, package or app-menu option
 has been tested. Console-side stock recovery works in the revised NTSC
 control; working HDMI 240p/288p and a readable SD capture remain **UNKNOWN**.
+
+## Independent stock controls and direct capture
+
+**CLAIMED (owner, later follow-ups):** normal 480p remains black in OBS
+after a normal PS3 reboot, OBS custom 720x480 / 60 fps / YUY2, and disabling
+PS3 Deep Colour. Direct PS3-to-Xiaomi G Pro 27Qi HDMI 480p produces a visible
+picture. The capture connection uses an HDMI splitter. Sources: owner
+messages; private `owner-monitor-control.json` and `manual-controls.json`.
+**INFERRED:** stock 480p can work on this PS3/display pairing; the failing
+capture chain must be checked separately from custom low-line timing.
+
+**PROVEN (direct USB-video captures):** with OBS's capture source explicitly
+deactivated, FFmpeg opened only `USB3 Video`, recorded no audio, and saved
+six frames each using YUY2 and MJPEG at 720x480 / 60 fps. Both completed
+with exit code 0; every saved frame was spatially uniform/dark with no XMB
+picture. The YUY2 capture logged no errors. MJPEG logged startup decode
+warnings before its six dark frames; do not call that path error-free.
+Evidence: ignored `local_only/hdmi_lowline/direct-card/20261114-230500/`,
+including `report.json`, `options.log`, frames and per-format FFmpeg logs.
+
+**PROVEN (capture identity/lock observation):** the card advertised both
+tested USB formats at this capture size. Immediately preceding these
+captures, the sparse live status returned 720x480 and scan byte 0x07;
+the cached status still described 1920x1080 and signal absent. These are
+firmware-specific reports, not a physical clock or decrypted-image proof.
+Source: the same captured capabilities and recorded diagnostic output.
+
+**INFERRED:** OBS processing alone does not explain the black picture;
+the same symptom occurs through a separate reader. **UNKNOWN:** whether
+the splitter/link, HDCP negotiation, capture firmware or another part of
+the card's input path causes it. A successful direct-monitor test does not
+validate the splitter output feeding the card. The next physical control
+uses that exact splitter output/cable with the monitor at stock 480p.
+**CLAIMED (Sony documentation):** HDMI output requires HDCP compatibility;
+that makes negotiation a possible investigation area, not an established
+cause here. Source: [Video Output Settings](https://manuals.playstation.net/document/en/ps3/current/settings/videooutput.html#hint).
+No firmware update, EEPROM write, or low-line timing patch was performed.
+
+**CLAIMED (owner instruction):** OBS was subsequently closed explicitly.
+The direct-capture cleanup attempted to reactivate its source, but OBS was
+no longer exposing the expected source UI; it was left closed as instructed. Source: owner message
+and the private capture report. This is not an OBS crash finding.

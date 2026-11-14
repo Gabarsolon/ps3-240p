@@ -1,6 +1,6 @@
 {
   "updated": "2026-11-14",
-  "note": "Published v1.4.4-rc1 as the official Latest SD release; all three asset IDs, hashes and sizes are unchanged and the latest-release endpoint is verified. CLAIMED: ps1_netemu resolves the external PS1 audio/crop report. HDMI 240p/288p remains untested; stock 480p is black in OBS.",
+  "note": "CLAIMED: stock 480p works directly on the owner Xiaomi monitor. PROVEN: YUY2 and MJPEG direct-card frames are also black independently of OBS. Splitter/capture/HDMI negotiation remains unresolved; no HDMI low-line timing candidate applied.",
   "workstreams": [
     {
       "name": "240p / 288p and analog gamma",
@@ -19,7 +19,7 @@
     },
     {
       "name": "HDMI 240p / 288p",
-      "status": "PROVEN: stock HDMI 480p software transition and timed stock recovery; USB live size/scan reports 720x480 progressive but OBS remains black. CLAIMED: normal XMB 480p is also black in OBS. UNKNOWN: SD capture-path cause and working HDMI 240p/288p; no low-line candidate applied.",
+      "status": "CLAIMED: stock HDMI 480p is visible directly on the owner monitor. PROVEN: timed stock recovery and direct USB-video captures; both OBS and FFmpeg are black through the splitter/capture chain. UNKNOWN: failing link/card behavior and working HDMI 240p/288p; no low-line candidate applied.",
       "evidence": "[HDMI low-line investigation](docs/HDMI_LOWLINE.md)"
     },
     {
