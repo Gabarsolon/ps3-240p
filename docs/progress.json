@@ -1,6 +1,6 @@
 {
   "updated": "2026-11-14",
-  "note": "PROVEN offline: HDMI 240p/288p reference timings, AVI/repetition fields and source-fetch bounds checked; known 4.93 ELF audit finds no existing low-line HDMI templates. Nine focused tests pass. UNKNOWN: live HDMI output. Owner CRT/audio testing left undisturbed; PS1 audio cause and fix remain unknown.",
+  "note": "CLAIMED: owner reports normal 240p analog audio in both games. PROVEN: bounded read-only game-time config logger runs on owner CFW; v1.4.4-rc2 diagnostic package passes host, loader and member checks. UNKNOWN: external pitch/crackle cause; no audio correction released.",
   "workstreams": [
     {
       "name": "240p / 288p and analog gamma",
@@ -34,8 +34,8 @@
     },
     {
       "name": "Community compatibility and measurements",
-      "status": "PROVEN: both reported PS1 images inspected and run under ps1_emu on owner HDMI; stock analog capture control restores, and a bounded pre-DAC sampler works. UNKNOWN: analog pitch/crackle cause and fix; current HDMI capture cannot measure the white-RCA path. Other compatibility/geometry/latency requests remain open.",
-      "evidence": "[PS1 report](docs/PS1_AUDIO_REPORT.md); [tracked requests](docs/DISPLAY_PRESETS_ROADMAP.md#other-community-requests-to-track)"
+      "status": "CLAIMED: owner CRT 240p audio is normal in both reported games. PROVEN: bounded read-only config logger works during Battle Hunter alongside the SD helper; rc2 diagnostic package passes host/loader/member checks. UNKNOWN: external pitch/crackle cause and fix; physical analog audio rate remains unmeasured.",
+      "evidence": "[PS1 report](docs/PS1_AUDIO_REPORT.md); [rc2 diagnostic](docs/RELEASE_v1.4.4-rc2.md); [tracked requests](docs/DISPLAY_PRESETS_ROADMAP.md#other-community-requests-to-track)"
     }
   ],
   "stages": [

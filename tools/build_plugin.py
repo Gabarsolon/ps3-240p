@@ -55,6 +55,8 @@ def main():
                         help="Build experimental helper under build/hd540; preserve the release helper")
     variants.add_argument("--pid-compatibility", action="store_true",
                           help="Build the SD PID compatibility helper under build/pid-compat")
+    variants.add_argument("--audio-diagnostic", action="store_true",
+                          help="Build SD-only bounded PS1 audio logger under build/audio-diagnostic")
     variants.add_argument("--display-probe", action="store_true",
                           help="Build standalone timed native PC-mode probe under build/display-probe")
     parser.add_argument("--name", default="vsh_240p")
@@ -64,8 +66,8 @@ def main():
     if args.experimental_hd540:
         from build_hd540_cache import build
         build()
-    if args.experimental_hd540 or args.pid_compatibility or args.display_probe:
-        directory = ROOT / "build" / ("hd540" if args.experimental_hd540 else "display-probe" if args.display_probe else "pid-compat") / "plugin"
+    if args.experimental_hd540 or args.pid_compatibility or args.display_probe or args.audio_diagnostic:
+        directory = ROOT / "build" / ("hd540" if args.experimental_hd540 else "audio-diagnostic" if args.audio_diagnostic else "display-probe" if args.display_probe else "pid-compat") / "plugin"
         directory.mkdir(parents=True, exist_ok=True)
         ELF, PRX, SPRX = (directory / ("vsh_240p" + suffix) for suffix in (".elf", ".prx", ".sprx"))
     if args.display_probe:
@@ -100,6 +102,9 @@ def main():
         for old in (PLUGIN / "vsh_gamma.c", ROOT / "app/source/sysmgr.c", PLUGIN / "gamma_service.c"):
             compile_cmd.remove(old)
         compile_cmd += [ROOT / "experiments/display_probe/native.c", ROOT / "experiments/display_probe/service.c"]
+    if args.audio_diagnostic:
+        compile_cmd[1:1] = ["-DCRT_PS1_AUDIO_DIAGNOSTIC=1"]
+        compile_cmd += [PLUGIN / "ps1_audio_log.c", PLUGIN / "vsh_ps1_audio_log.c"]
     if args.experimental_hd540:
         compile_cmd[1:1] = ["-DCRT_ENABLE_HD540=1"]
         compile_cmd += [PLUGIN / "vsh_hd540.c", PLUGIN / "hd540_service.c",

@@ -36,14 +36,20 @@ Current feature status (separate from the weighted research estimate):
 | HDMI 240p / 288p | PROVEN offline: SD HDMI routes and pixel-repeat fields audited; no low-line VIC in the checked 4.93 template table. Reference timing/AVI/buffer-bound tool and nine tests pass. UNKNOWN: transmitter/receiver acceptance and a working console implementation; console untouched during owner CRT tests. | [HDMI low-line investigation](docs/HDMI_LOWLINE.md) |
 | Resolution presets and scaling | PROVEN on owner HDMI setup: native 1280x768, 1280x1024 and 1920x1200 timed tests with stock recovery; WUXGA verified with live receiver size/scan despite stale cache. Development menu installed; all three menu selections, clean-boot helper loading and exact recovery verified; games, scaling controls and HEN untested. | [PC preset development](docs/PC_PRESETS_DEVELOPMENT.md); [roadmap](docs/DISPLAY_PRESETS_ROADMAP.md) |
 | HEN diagnostic and port | PROVEN: diagnostic builds and public-only CFW smoke pass. Additional native/gamma/mapping paths inspected offline; no ordinary-HEN 240p/288p route established. Actual HEN runtime untested. | [Alternative paths](docs/HEN_ALTERNATIVE_PATHS.md); [diagnostic scope](docs/HEN_DIAGNOSTIC.md) |
-| Community compatibility and measurements | PROVEN: both reported PS1 images inspected and run under ps1_emu on owner HDMI; stock analog capture control restores, and a bounded pre-DAC sampler works. UNKNOWN: analog pitch/crackle cause and fix; current HDMI capture cannot measure the white-RCA path. Other compatibility/geometry/latency requests remain open. | [PS1 report](docs/PS1_AUDIO_REPORT.md); [tracked requests](docs/DISPLAY_PRESETS_ROADMAP.md#other-community-requests-to-track) |
+| Community compatibility and measurements | CLAIMED: owner CRT 240p audio is normal in both reported games. PROVEN: bounded read-only config logger works during Battle Hunter alongside the SD helper; rc2 diagnostic package passes host/loader/member checks. UNKNOWN: external pitch/crackle cause and fix; physical analog audio rate remains unmeasured. | [PS1 report](docs/PS1_AUDIO_REPORT.md); [rc2 diagnostic](docs/RELEASE_v1.4.4-rc2.md); [tracked requests](docs/DISPLAY_PRESETS_ROADMAP.md#other-community-requests-to-track) |
 
-_Last update: 2026-11-14. PROVEN offline: HDMI 240p/288p reference timings, AVI/repetition fields and source-fetch bounds checked; known 4.93 ELF audit finds no existing low-line HDMI templates. Nine focused tests pass. UNKNOWN: live HDMI output. Owner CRT/audio testing left undisturbed; PS1 audio cause and fix remain unknown._
+_Last update: 2026-11-14. CLAIMED: owner reports normal 240p analog audio in both games. PROVEN: bounded read-only game-time config logger runs on owner CFW; v1.4.4-rc2 diagnostic package passes host, loader and member checks. UNKNOWN: external pitch/crackle cause; no audio correction released._
 <!-- progress:end -->
 
 The progress block is generated from `docs/progress.json`; percentages estimate work, not electrical verification.
 
 ## SD PID compatibility prerelease
+
+[v1.4.4-rc2 audio diagnostic](https://github.com/Gabarsolon/ps3-240p/releases/tag/v1.4.4-rc2)
+adds bounded game-time logging for the reported PS1 pitch/crackle issue.
+**CLAIMED (owner):** both reported games sound normal on the owner's 240p
+CRT setup. **UNKNOWN:** the external failure's cause; this is a diagnostic,
+not an audio fix. [Tester steps and validation](docs/RELEASE_v1.4.4-rc2.md).
 
 [v1.4.4-rc1](https://github.com/Gabarsolon/ps3-240p/releases/tag/v1.4.4-rc1)
 targets the v1.4.3 "sysmgr PID 10 not found" error.

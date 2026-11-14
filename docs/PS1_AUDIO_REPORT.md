@@ -74,6 +74,18 @@ remains open; keep the build a prerelease.
 
 ## Owner-console investigation (2026-11-14 evening)
 
+**CLAIMED (owner, subsequent CRT test):** both Toy Story 2 and Battle Hunter
+have normal audio during 240p playback on the owner's CRT setup. Source:
+owner message, 2026-11-14, "I tested those games and the audio's fine."
+This is the first supplied owner result on the analog low-line path,
+separate from the earlier HDMI recordings below. Exact physical clock and
+end-to-end audio latency were not measured. **INFERRED:** the failure is not
+universal across the two reported setups. **UNKNOWN:** whether console model,
+emulator, game image, launch history or another setting explains the difference.
+
+The next build adds bounded game-time logging, retaining the working timing
+recipe. See [v1.4.4-rc2 diagnostic instructions](RELEASE_v1.4.4-rc2.md).
+
 **PROVEN (read-only disc inspection):** the installed images in
 `/dev_hdd0/PSXISO` identify these boot executables and audio assets:
 

@@ -19,6 +19,9 @@
 #include "vsh_gamma.h"
 #include "gamma_service.h"
 #include "../app/source/gamma_protocol.h"
+#ifdef CRT_PS1_AUDIO_DIAGNOSTIC
+#include "vsh_ps1_audio_log.h"
+#endif
 #ifdef CRT_ENABLE_HD540
 #include "vsh_hd540.h"
 #endif
@@ -158,6 +161,9 @@ static void corrector(void *arg) {
     log_line("native_bind",(uint32_t)bound);
     if(bound){atomic_store(&running,0);sysLv2FsClose(log_fd);log_fd=-1;exit_thread();}
     int gamma_bound=vsh_gamma_bind();log_line("gamma_bind",(uint32_t)gamma_bound);
+#ifdef CRT_PS1_AUDIO_DIAGNOSTIC
+    vsh_ps1_audio_log_open();log_line("audio_diagnostic_v1",1);
+#endif
     (void)sysLv2FsUnlink(GAMMA_REQUEST);(void)sysLv2FsUnlink(GAMMA_REPLY);
     (void)sysLv2FsUnlink(GAMMA_READY);
 #ifdef CRT_ENABLE_HD540
@@ -193,6 +199,11 @@ static void corrector(void *arg) {
         if(!gamma_bound)gamma_poll();
         int armed = flag_exists(ENFORCER_FLAG);
         if (armed != seen_armed) { seen_armed = armed; target=read_target(); stable=attempts=0; log_line(armed ? "armed" : "disarmed", target); }
+#ifdef CRT_PS1_AUDIO_DIAGNOSTIC
+        /* Independent of enforcement, so an already loaded helper can also
+         * observe stock playback. Reuse the corrector's selected target. */
+        vsh_ps1_audio_log_poll(armed,flag_exists(APP_ACTIVE_FLAG),target);
+#endif
         if (!armed) { stable = 0; attempts = 0; continue; }
         int app = flag_exists(APP_ACTIVE_FLAG);
         if (app != seen_app) { seen_app = app; target=read_target(); stable=attempts=0; log_line(app ? "app_active" : "app_gone", target); }
@@ -235,6 +246,9 @@ static void corrector(void *arg) {
         log_line(rc ? "correct_fail" : "correct_sent", (uint32_t)rc);
     }
     log_line("stop", 0);
+#ifdef CRT_PS1_AUDIO_DIAGNOSTIC
+    vsh_ps1_audio_log_close();
+#endif
 #ifdef CRT_ENABLE_HD540
     if(hd540_service_busy(&hd_session)){
      hd540_request cancel={HD540_MAGIC,hd_session.seen+1u,HD540_CANCEL,0};

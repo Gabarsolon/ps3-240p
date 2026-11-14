@@ -27,7 +27,7 @@ def sha256_file(path: Path) -> str:
             h.update(chunk)
     return h.hexdigest()
 
-def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, display_presets=False):
+def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, display_presets=False, audio_diagnostic=False):
     sdk = Path(sdk_path).resolve()
     if not sdk.exists():
         raise FileNotFoundError(f"PS3DK SDK not found at {sdk}")
@@ -36,8 +36,8 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, displ
     app_build_dir = ROOT / "app" / "build"
     staging_dir = build_dir / "staging"
     deliverables_dir = ROOT / "deliverables"
-    if experimental_hd540 or pid_compatibility or display_presets:
-        build_dir = ROOT / "build" / ("hd540" if experimental_hd540 else "display-presets" if display_presets else "pid-compat")
+    if experimental_hd540 or pid_compatibility or display_presets or audio_diagnostic:
+        build_dir = ROOT / "build" / ("hd540" if experimental_hd540 else "audio-diagnostic" if audio_diagnostic else "display-presets" if display_presets else "pid-compat")
         app_build_dir = build_dir / "app"
         staging_dir = build_dir / "staging"
         deliverables_dir = build_dir / "deliverables"
@@ -46,6 +46,9 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, displ
     if pid_compatibility:
         helper = ROOT / "build/pid-compat/plugin/vsh_240p.sprx"
         version = "01.44"
+    if audio_diagnostic:
+        helper = ROOT / "build/audio-diagnostic/plugin/vsh_240p.sprx"
+        version = "01.45"
     if display_presets:
         helper = ROOT / "build/pid-compat/plugin/vsh_240p.sprx"
         version = "01.70"
@@ -79,7 +82,7 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, displ
     run("cmake", "-S", ROOT / "app", "-B", app_build_dir, "-G", "Ninja",
         f"-DCMAKE_TOOLCHAIN_FILE={toolchain_cmake}",
         f"-DCRT_ENABLE_HD540={'ON' if experimental_hd540 else 'OFF'}",
-        f"-DCRT_APP_VERSION={'1.6.0-dev1' if display_presets else '1.4.4-rc1' if pid_compatibility else ''}",
+        f"-DCRT_APP_VERSION={'1.4.4-rc2' if audio_diagnostic else '1.6.0-dev1' if display_presets else '1.4.4-rc1' if pid_compatibility else ''}",
         f"-DCRT_ENABLE_PRESETS={'ON' if display_presets else 'OFF'}")
     run("cmake", "--build", app_build_dir, "--target", "ps3-240p-app")
 
@@ -130,6 +133,8 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, displ
     out_pkg = deliverables_dir / ("CRT-Toolset-1.5.0-dev19.pkg" if experimental_hd540 else "CRT-Toolset.pkg")
     if pid_compatibility:
         out_pkg = deliverables_dir / "CRT-Toolset-1.4.4-rc1.pkg"
+    if audio_diagnostic:
+        out_pkg = deliverables_dir / "CRT-Toolset-1.4.4-rc2.pkg"
 
     if display_presets:
         out_pkg = deliverables_dir / "CRT-Toolset-1.6.0-dev1.pkg"
@@ -173,6 +178,7 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, displ
         "experimental_hd540": experimental_hd540,
         "pid_compatibility": pid_compatibility,
         "display_presets": display_presets,
+        "audio_diagnostic": audio_diagnostic,
         "validation": "Host/package checks only; experimental HDMI 540p waveform and recovery unverified" if experimental_hd540 else "Proportional 240p/288p typography with non-overlapping line spacing and CRT overscan margins",
         "package": out_pkg.name,
         "size_bytes": pkg_size,
@@ -184,6 +190,8 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, displ
     }
     if pid_compatibility:
         manifest["validation"] = "Bounded sysmgr discovery host/private-firmware checks; external CECH-2004A compatibility unverified"
+    if audio_diagnostic:
+        manifest["validation"] = "SD PID-compatible diagnostic with read-only bounded PS1 config logger; host/loader/package checks only, no verified audio fix"
 
     if display_presets:
         manifest["validation"] = "Timed native HDMI preset development build; verify menu and receiver behavior separately"
@@ -211,5 +219,6 @@ if __name__ == "__main__":
     variants.add_argument("--pid-compatibility", action="store_true",
                           help="Build SD-only v1.4.4-rc1 under build/pid-compat without replacing release assets")
     variants.add_argument("--display-presets", action="store_true", help="Build isolated timed PC preset menu under build/display-presets")
+    variants.add_argument("--audio-diagnostic", action="store_true", help="Build isolated SD v1.4.4-rc2 with bounded read-only PS1 audio diagnostics")
     args = parser.parse_args()
-    main(args.sdk, args.experimental_hd540, args.pid_compatibility, args.display_presets)
+    main(args.sdk, args.experimental_hd540, args.pid_compatibility, args.display_presets, args.audio_diagnostic)

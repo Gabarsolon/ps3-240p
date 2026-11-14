@@ -36,6 +36,7 @@ def main():
         ("gamma-service", ["tests/test_gamma_service.c", "plugin/gamma_service.c"]),
         ("gamma-ipc", ["tests/test_gamma_ipc.c", "app/source/gamma_ipc.c", "plugin/gamma_service.c"]),
         ("plugin-lifecycle", ["tests/test_plugin_lifecycle.c", "app/source/plugin_lifecycle.c"]),
+        ("ps1-audio-log", ["tests/test_ps1_audio_log.c", "plugin/ps1_audio_log.c"]),
         ("vsh-video", ["tests/test_vsh_video.c", "plugin/vsh_video.c"]),
         ("vsh-gamma", ["tests/test_vsh_gamma.c", "plugin/vsh_gamma.c"]),
         ("ui", ["tests/test_ui.c", "app/source/ui_layout.c"]),
@@ -51,6 +52,8 @@ def main():
             test_flags += ["-DVSH_VIDEO_HOST_TEST=1"]
         if name == "vsh-gamma":
             test_flags += ["-DVSH_GAMMA_HOST_TEST=1"]
+        if name == "ps1-audio-log":
+            test_flags += ["-DPS1_AUDIO_LOG_HOST_TEST=1"]
         subprocess.run(test_flags + sources + ([] if os.name == "nt" else ["-lm"]) + ["-o", str(exe)], cwd=ROOT, check=True)
         if name == "startup":
             for scenario in range(21):
