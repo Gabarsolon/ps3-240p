@@ -1,6 +1,6 @@
 {
   "updated": "2026-11-14",
-  "note": "PROVEN offline: retail 4.93 has existing 1280x768, 1280x1024 and 1920x1200 raster/metadata/clock entries and matching HDMI descriptions; roadmap and current feature table added. GameOS activation and live PC-mode compatibility remain UNKNOWN (docs/DISPLAY_PRESETS_INVESTIGATION.md).",
+  "note": "PROVEN offline: retail 4.93 PC raster/clock/HDMI entries and native monitor-selector dispatch identified. Next: trace device-backend acceptance and source-buffer contracts before a timed 1280x768 HDMI prototype. No live PC-mode test performed (docs/DISPLAY_PRESETS_INVESTIGATION.md).",
   "workstreams": [
     {
       "name": "240p / 288p and analog gamma",
@@ -19,8 +19,8 @@
     },
     {
       "name": "Resolution presets and scaling",
-      "status": "Investigation started: existing PC-mode paths, aspect and placement controls. No new preset tested or released.",
-      "evidence": "[Roadmap](docs/DISPLAY_PRESETS_ROADMAP.md)"
+      "status": "PROVEN offline: PC timing/clock/HDMI entries and native monitor-selector dispatch found. UNKNOWN: device-backend acceptance, live presets and game compatibility.",
+      "evidence": "[Roadmap](docs/DISPLAY_PRESETS_ROADMAP.md); [findings](docs/DISPLAY_PRESETS_INVESTIGATION.md)"
     },
     {
       "name": "Community compatibility and measurements",

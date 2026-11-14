@@ -11,6 +11,8 @@ See the [approved roadmap](DISPLAY_PRESETS_ROADMAP.md).
 Firmware addresses below are virtual addresses in the private 4.93
 `sysmgr_ss.elf`, SHA-256
 `07c0bd2a2403f65b6d741e11a15106114365cb78165833bac726476f671b64c9`.
+Addresses explicitly marked VSH refer instead to private retail `vsh.elf`,
+SHA-256 `2368923a20c7ed7f4927dbcad8854e15095d0d1cabad70c6531b76e36c9cfb17`.
 Sony-derived listings, full table dumps and decompilation remain under ignored
 `local_only/`; this document publishes addresses and descriptions only.
 
@@ -79,6 +81,31 @@ retail/state checks (`0x00126e18`, `0x000c56b8`, `0x000c5bec`).
 and whether it preserves the source surface correctly. Trace the native
 debug-monitor/conversion path before broadening any existing bridge guard.
 
+### Focused follow-up: native PC monitor selection route
+
+**PROVEN (private VSH binary, bounded Ghidra trace):** the debug-monitor
+RPC handler at `0x00126a7c` invokes display-interface method offset `0x54`.
+The checked interface table resolves that method to `0x00453ad4`; its
+dispatch table at `0x00453b24` has explicit cases for monitor types 11, 12
+and 13, preserving those values for dispatcher `0x0044d2c4`. The dispatcher
+invokes backend method offset `0x40` on optional device objects at offsets
+`0x24`/`0x28` and the object at offset `0x34`.
+
+**PROVEN (local SDK declarations):** `cell/cell_video_out.h` names monitor
+types 11/12/13 as WXGA/SXGA/WUXGA and separately defines display-conversion
+values for these targets. A declaration alone does not establish working
+retail behavior. **INFERRED:** the native selector is a concrete existing
+route worth tracing before replacing any timing tables. **UNKNOWN:** backend
+method implementations, retail/device restrictions, persistence, return
+semantics and whether this selector actually changes output on the owner's
+console. Do not call it a working PC-mode switch yet.
+
+Private reproducibility evidence: `local_only/display_presets/trace.py`,
+`summary.json`, `bounded-vsh.asm`, the bounded setter decompilation under
+`local_only/activation/`, and `xsetting4712_methods.json`. Fresh ELF reads
+confirmed the identities, PC metadata/clock selections, validator targets
+and HDMI video-code fields. No proprietary listing is included here.
+
 **PROVEN (private AV-service trace):** scaler/placement function
 `0x80002ca4` consumes source dimensions, horizontal/vertical position and
 profile metadata separately. Its branches include centered windows and
@@ -102,8 +129,9 @@ Linux presets.
 
 Before a live test:
 
-1. Resolve the VSH/platform PC conversion route and its source-buffer/pitch
-   contract; distinguish actual output mode from source resolution IDs.
+1. Follow backend method offset `0x40` from the native monitor dispatcher,
+   then resolve the PC conversion route and its source-buffer/pitch contract;
+   distinguish actual output mode from source resolution IDs.
 2. Establish connector/state checks and native return/error semantics.
 3. Prepare exact stock-state capture and bounded restoration using the
    resident helper; no saved boot default or arbitrary clock programming.

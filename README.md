@@ -33,10 +33,10 @@ Current feature status (separate from the weighted research estimate):
 | 240p / 288p and analog gamma | Released; owner reports success. Wider connector/game coverage and electrical waveform measurement remain open. | [Release and calibration notes](docs/CRT_CALIBRATION.md); [SD results](docs/RELEASE_v1.4.4-rc1.md) |
 | Sysmgr PID compatibility | PROVEN: checked discovery implemented and v1.4.4-rc1 published. CLAIMED: owner CRT test works. UNKNOWN: external CECH-2004A result. | [PID investigation](docs/SYSMGR_DISCOVERY.md) |
 | HDMI 540p | PROVEN: full XMB picture and receiver-reported progressive output in timed dev19 test. UNKNOWN: HD CRT, component and game compatibility; no permanent enforcement. | [540p prerelease](docs/RELEASE_v1.5.0-dev19.md) |
-| Resolution presets and scaling | Investigation started: existing PC-mode paths, aspect and placement controls. No new preset tested or released. | [Roadmap](docs/DISPLAY_PRESETS_ROADMAP.md) |
+| Resolution presets and scaling | PROVEN offline: PC timing/clock/HDMI entries and native monitor-selector dispatch found. UNKNOWN: device-backend acceptance, live presets and game compatibility. | [Roadmap](docs/DISPLAY_PRESETS_ROADMAP.md); [findings](docs/DISPLAY_PRESETS_INVESTIGATION.md) |
 | Community compatibility and measurements | Open: PS1 mode transitions, integer scaling, input lag, component, PS2/BC models and Mega Man 9/10. | [Tracked requests](docs/DISPLAY_PRESETS_ROADMAP.md#other-community-requests-to-track) |
 
-_Last update: 2026-11-14. PROVEN offline: retail 4.93 has existing 1280x768, 1280x1024 and 1920x1200 raster/metadata/clock entries and matching HDMI descriptions; roadmap and current feature table added. GameOS activation and live PC-mode compatibility remain UNKNOWN (docs/DISPLAY_PRESETS_INVESTIGATION.md)._
+_Last update: 2026-11-14. PROVEN offline: retail 4.93 PC raster/clock/HDMI entries and native monitor-selector dispatch identified. Next: trace device-backend acceptance and source-buffer contracts before a timed 1280x768 HDMI prototype. No live PC-mode test performed (docs/DISPLAY_PRESETS_INVESTIGATION.md)._
 <!-- progress:end -->
 
 The progress block is generated from `docs/progress.json`; percentages estimate work, not electrical verification.
