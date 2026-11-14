@@ -71,3 +71,138 @@ These are proposed checks (**INFERRED**), not completed tester results:
 The PID compatibility result is recorded in
 [the model report](CECH2004A_LOOKUP_REPORT.md). Audio/crop compatibility
 remains open; keep the build a prerelease.
+
+## Owner-console investigation (2026-11-14 evening)
+
+**PROVEN (read-only disc inspection):** the installed images in
+`/dev_hdd0/PSXISO` identify these boot executables and audio assets:
+
+| Image | Boot ID | Checked audio-related content |
+|---|---|---|
+| Toy Story 2 USA | `SLUS_008.93` | XA streams and SPU `.VB/.VH` banks; one data track |
+| Battle Hunter USA | `SLUS_013.35` | SPU `.SEQ/.VB/.VH` assets and four AUDIO tracks in its CUE |
+| Mega Man X4 USA | `SLUS_005.61` | XA music/voice streams; one data track |
+| Gran Turismo 2 plus GT Mode | `SCES_123.80` | Installed image identifies itself as a PAL modified release |
+
+**PROVEN (sampled sector subheaders):** the first 128 sectors checked from
+each of Toy Story 2's first three `.XA` files and Mega Man X4's first three
+music `.XA` files use coding byte `0x01`, audio submode `0x64`, and channels
+0..7. **INFERRED:** there is no obvious XA-coding distinction in those
+samples that explains the report. This does not compare every track or
+exclude a game/emulator interaction. The installed PAL GT2 modification is
+not a matched NTSC control. Evidence: private
+`local_only/ps1_audio/discs-20261114-202404/report.json` and `xa-headers.json`.
+No full image was copied or modified.
+
+**PROVEN (live process listing, OBS frames and USB audio recordings):** both
+new games launch through webMAN under `main_ps1_emu.self` on the owner's
+current HDMI setup. Battle Hunter reaches its menu with non-silent stereo
+audio; Toy Story 2 reaches gameplay with non-silent audio. **UNKNOWN:**
+240p analog pitch on these runs. HDMI playback is not a substitute for the
+tester's analog path. Private evidence: `live-20261114-202630`,
+`live-20261114-205559`, and
+`local_only/display_presets/public-diagnostic-ui/capture-20261114-210340`.
+
+### Hardware comparison and limits
+
+**PROVEN (private read-only system report):** the owner's reported product
+subcode is `0x0B`. **INFERRED:** this identifies the CECH-25xx family; the
+exact sticker SKU and motherboard revision have not been independently
+verified. No console identifiers are included in public artifacts.
+
+**CLAIMED (hardware investigators' tables):** the relevant family differences
+are as follows; they are not measurements of either individual console.
+
+| Family | Motherboard family | Cell / RSX process | MultiAV family |
+|---|---|---|---|
+| CECH-20xx, including reported CECH-2004A | DYN-001 | 45 nm / 65 nm | CXM4027R |
+| CECH-25xx | JTP-001 / JSD-001 | 45 nm / 40 nm | CXM4027R |
+
+Sources: [chassis/product codes](https://www.psdevwiki.com/ps3/Chassis_ID),
+[board revisions](https://www.psdevwiki.com/ps3/Motherboard_Revisions),
+[RSX inventory](https://www.psdevwiki.com/ps3/RSX), and
+[MultiAV inventory](https://www.psdevwiki.com/ps3/MultiAV), whose table lists
+both DYN-001 and JTP/JSD-001 with CXM4027R.
+**UNKNOWN:** whether silicon revision, clock routing, encoder revision or
+another model-dependent difference contributes to this bug. Shared chip
+family does not establish identical behavior; different RSX manufacturing
+process does not establish an audio cause.
+
+### Capture control and remaining gap
+
+**PROVEN (live timed stock control):** a separate helper selected stock
+analog 480i for 15 seconds and restored the exact saved native HDMI tuple.
+It changed no low-line timing, audio setting or saved video preference.
+HDMI picture disappeared during the analog interval and returned after
+restoration; the USB audio recording during that interval contained only
+near-silent quantization/noise (roughly `1.46e-5` full-scale AC RMS).
+Evidence: private `stock-control-20261114-204045/{report.json,probe.log,audio-quality.json}`.
+The control's source, safeguards and host tests are in
+`experiments/ps1_audio/` and `tests/test_ps1_audio_probe.c`.
+
+**INFERRED limitation:** the currently connected HDMI-only capture path
+cannot directly measure the reported white-RCA/analog-DAC failure. This is
+not evidence that analog audio is silent or defective. An analog line-level
+recording or an independently validated equivalent measurement is still
+needed to verify an analog fix; no microphone recording was made.
+
+### Firmware observations and diagnostics
+
+**PROVEN (private 4.93 source inspection):** PS1 audio initializer
+`0x87c90..0x87e8c` opens a two-channel, eight-block PCM ring. Context pointer
+slot `0x17c348` leads to the cached port configuration and ring addresses.
+It obtains the configuration before starting playback, so its cached READY
+status is not a fresh statement that the port is stopped. The full
+initializer SHA-256 is
+`58aba84d826ead0d60c015ab83600fe5be13e83db0eaca2901da70e089cf16e0`.
+Evidence: private `offline/emu_0x87c90.{c,asm}` and the original
+`local_only/ps1ps2/ps1_emu_493.elf`.
+
+**PROVEN (owner-console readback):** the initializer fingerprint matches
+and bounded process reads retrieve changing stereo float PCM from both
+games. `tools/ps1_audio_snapshot.py` supports these read-only diagnostics;
+the optional PS3MAPI TCP server is disabled on this console, and its HTTP
+fallback is slow. **PROVEN (timed reads):** an HTTP ring read takes about
+1.9 seconds, exceeding the nominal 42.7-ms ring period at 48 kHz. Equal
+consumer indices can hide complete wraps. These non-atomic snapshots must
+not be concatenated into a purported recording or used as pitch proof.
+Private evidence: `ring-20261114-204658`, `ring-20261114-205600`.
+
+**PROVEN (subsequent resident collection):** the isolated v2 helper captures
+64 independent PCM snippets locally before FTP transfer, avoiding the slow
+HTTP scan. Toy Story 2's maximum process-read duration was 236 microseconds;
+all 64 records had an unchanged consumer index. Its reader validates every
+record's sequence, process identity, timestamps, cursor bounds and finite
+PCM. **UNKNOWN:** atomicity against the producer and analog playback pitch.
+These are independent/overlapping ring snippets, not a continuous recording.
+Source, commands, host checks and limitations:
+[audio diagnostic tools](../experiments/ps1_audio/README.md).
+Private evidence: `resident-20261114-210710`; checked helper SHA-256
+`e3f69f171a932821957acc19bd71833baf9a8cd6561aa7f2f9dfe98205c726be`.
+
+**PROVEN (private AV-service trace):** normal audio-mode handler
+`0x8000c988` calls `0x80004b60`; the latter distinguishes sample-rate enums
+and reaches audio setup `0x80004918`. The timing payload does not directly
+write those audio configuration fields. **UNKNOWN:** an indirect clock or
+emulation-pacing interaction. Register `0x37`'s exact electrical role is
+still not independently established; do not equate our template bit change
+with a demonstrated analog sample-clock change.
+
+**PROVEN (payload arithmetic), INFERRED (nominal cadence):** the NTSC
+metadata float changes by about one part per million. Using the existing
+nominal 54-MHz sample clock and the checked raster totals gives roughly
+59.940 to 60.005 fields/s, an increase of about 0.108%. This calculation is
+not a physical clock measurement and does not itself explain a large
+downward pitch shift. Source: `app/source/timing_payloads.h`.
+
+**Current result: UNKNOWN cause; no verified fix.** The next comparison must
+keep the exact game, emulator, audio route and input sequence fixed while
+comparing stock 480i and 240p. Separate pre-DAC PCM, actual analog playback,
+game/video cadence and stock restoration. Preserve the existing known
+working timing recipe until a discriminating test justifies changing it.
+
+**PROVEN (cleanup):** normal soft reboot removed the temporary sampler;
+only webMAN remained in VSH slot 1. The original empty enforcement flag was
+restored, and hashes of the installed app, SD helpers and boot-plugin list
+matched the initial inventory. XMB/HDMI picture returned. Evidence: private
+`cleanup-20261114-211454/report.json` and `xmb.jpg`.

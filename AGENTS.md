@@ -99,3 +99,28 @@ Research project: native 240p/288p analog output on a PS3 (CFW Evilnat 4.93 + Co
   owned RAM hooks before a VSH-only restart: it need not reset LV1 state.
   Never reboot through unverified pending recovery or alter saved boot
   settings as part of an experimental display test.
+
+## PS1 audio diagnostics
+
+- **PROVEN (implementation and owner CFW controls):** the PS1 audio work is
+  documented in `docs/PS1_AUDIO_REPORT.md` and
+  `experiments/ps1_audio/README.md`. The dedicated USB input is
+  `Digital Audio Interface (USB3 Digital Audio)`; never substitute a
+  microphone, webcam, headset or unknown line input. OBS virtual video and
+  the dedicated capture-card audio can be recorded separately.
+- Separate pre-DAC PCM, actual analog playback, video cadence and recovery.
+  The current HDMI capture loses usable audio during the stock analog
+  control; that says nothing about sound on white RCA. HDMI success is not
+  an analog/240p audio result. Preserve exact game ID, emulator, connector,
+  sample-rate state and correction events when comparing cases.
+- **PROVEN (live timing):** HTTP process-memory reads take longer than the
+  PS1 ring turnover. Equal consumer indices can hide wraps. Do not present
+  those snapshots as atomic PCM or concatenate them into a recording. The
+  isolated resident collector takes 64 bounded, independent snippets and
+  records read duration and both consumer indices; producer races and
+  physical pitch still require separate validation. Its public collector
+  sends only the read-only action; never overwrite an unacknowledged inbox.
+- Game code, disc payloads, PCM, decompilation and raw system pages stay in
+  ignored `local_only/`. Public evidence contains hashes, addresses and
+  measurements only. Do not publish a claimed audio fix without reproducing
+  the failure and checking the same analog path after the change.
