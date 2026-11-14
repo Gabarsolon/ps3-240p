@@ -1,11 +1,12 @@
 # CRT Toolset (ps3-240p)
 
 240p/288p output and native analog gamma correction for PS3 AV Multi Out,
-verified on Evilnat 4.93 CEX + Cobra. Current release: **v1.4.3**
-(package version **01.43**).
+verified on Evilnat 4.93 CEX + Cobra. Current official release:
+**[v1.4.4-rc1](https://github.com/Gabarsolon/ps3-240p/releases/tag/v1.4.4-rc1)**
+(package version **01.44**; the tested build keeps its original `rc1` name).
 
 **CLAIMED (owner):** gamma works together with both 240p and 288p on the tested
-CRT setup. [Release notes](docs/RELEASE_v1.4.3.md) and
+CRT setup. [Current release notes](docs/RELEASE_v1.4.4-rc1.md) and
 [gamma evidence and instructions](docs/GAMMA.md).
 
 <!-- progress:start -->
@@ -31,35 +32,33 @@ Current feature status (separate from the weighted research estimate):
 | Feature | Status / remaining work | Evidence |
 |---|---|---|
 | 240p / 288p and analog gamma | Released; owner reports success. Wider connector/game coverage and electrical waveform measurement remain open. | [Release and calibration notes](docs/CRT_CALIBRATION.md); [SD results](docs/RELEASE_v1.4.4-rc1.md) |
-| Sysmgr PID compatibility | PROVEN in supplied external log: sysmgr PID 9 and all 54 targets resolved. CLAIMED: CECH-2004A 240p works; PS1 audio/crop issues remain open. | [PID investigation](docs/SYSMGR_DISCOVERY.md) |
+| Sysmgr PID compatibility | PROVEN in supplied external log: sysmgr PID 9 and all 54 targets resolved. CLAIMED: CECH-2004A 240p works; switching to ps1_netemu resolves its reported PS1 audio/crop issues. | [PID investigation](docs/SYSMGR_DISCOVERY.md) |
 | HDMI 540p | PROVEN: full XMB picture and receiver-reported progressive output in timed dev19 test. UNKNOWN: HD CRT, component and game compatibility; no permanent enforcement. | [540p prerelease](docs/RELEASE_v1.5.0-dev19.md) |
-| HDMI 240p / 288p | PROVEN offline: SD HDMI routes and pixel-repeat fields audited; no low-line VIC in the checked 4.93 template table. Reference timing/AVI/buffer-bound tool and nine tests pass. UNKNOWN: transmitter/receiver acceptance and a working console implementation; console untouched during owner CRT tests. | [HDMI low-line investigation](docs/HDMI_LOWLINE.md) |
+| HDMI 240p / 288p | PROVEN: stock HDMI 480p software transition and timed stock recovery; USB live size/scan reports 720x480 progressive but OBS remains black. CLAIMED: normal XMB 480p is also black in OBS. UNKNOWN: SD capture-path cause and working HDMI 240p/288p; no low-line candidate applied. | [HDMI low-line investigation](docs/HDMI_LOWLINE.md) |
 | Resolution presets and scaling | PROVEN on owner HDMI setup: native 1280x768, 1280x1024 and 1920x1200 timed tests with stock recovery; WUXGA verified with live receiver size/scan despite stale cache. Development menu installed; all three menu selections, clean-boot helper loading and exact recovery verified; games, scaling controls and HEN untested. | [PC preset development](docs/PC_PRESETS_DEVELOPMENT.md); [roadmap](docs/DISPLAY_PRESETS_ROADMAP.md) |
 | HEN diagnostic and port | PROVEN: diagnostic builds and public-only CFW smoke pass. Additional native/gamma/mapping paths inspected offline; no ordinary-HEN 240p/288p route established. Actual HEN runtime untested. | [Alternative paths](docs/HEN_ALTERNATIVE_PATHS.md); [diagnostic scope](docs/HEN_DIAGNOSTIC.md) |
-| Community compatibility and measurements | CLAIMED: owner CRT 240p audio is normal in both reported games. PROVEN: bounded read-only config logger works during Battle Hunter alongside the SD helper; rc2 diagnostic package passes host/loader/member checks. UNKNOWN: external pitch/crackle cause and fix; physical analog audio rate remains unmeasured. | [PS1 report](docs/PS1_AUDIO_REPORT.md); [rc2 diagnostic](docs/RELEASE_v1.4.4-rc2.md); [tracked requests](docs/DISPLAY_PRESETS_ROADMAP.md#other-community-requests-to-track) |
+| Community compatibility and measurements | CLAIMED: external tester resolves PS1 audio/crop by selecting ps1_netemu; owner reports normal CRT audio. PROVEN: rc1 assets retain their checked digests; the owner approved official release promotion. UNKNOWN: exact emulator/setup difference, integer scaling and latency. | [PS1 report](docs/PS1_AUDIO_REPORT.md); [rc2 diagnostic](docs/RELEASE_v1.4.4-rc2.md); [tracked requests](docs/DISPLAY_PRESETS_ROADMAP.md#other-community-requests-to-track) |
 
-_Last update: 2026-11-14. Published v1.4.4-rc2 PS1 audio diagnostic; GitHub PKG digest matches the checked artifact. PROVEN: bounded observer runs during owner Battle Hunter; host/loader/package checks pass. CLAIMED: owner CRT 240p audio is normal. UNKNOWN: external pitch/crackle cause; no audio fix claimed._
+_Last update: 2026-11-14. Owner approved official promotion of the unchanged v1.4.4-rc1 SD package. CLAIMED: ps1_netemu resolves the external PS1 audio/crop report. PROVEN: timed stock HDMI 480p recovers but its OBS picture is black; HDMI low-line timing remains untested._
 <!-- progress:end -->
 
 The progress block is generated from `docs/progress.json`; percentages estimate work, not electrical verification.
 
-## SD PID compatibility prerelease
-
-[v1.4.4-rc2 audio diagnostic](https://github.com/Gabarsolon/ps3-240p/releases/tag/v1.4.4-rc2)
-adds bounded game-time logging for the reported PS1 pitch/crackle issue.
-**CLAIMED (owner):** both reported games sound normal on the owner's 240p
-CRT setup. **UNKNOWN:** the external failure's cause; this is a diagnostic,
-not an audio fix. [Tester steps and validation](docs/RELEASE_v1.4.4-rc2.md).
+## Official SD release: PID compatibility
 
 [v1.4.4-rc1](https://github.com/Gabarsolon/ps3-240p/releases/tag/v1.4.4-rc1)
-targets the v1.4.3 "sysmgr PID 10 not found" error.
+is now the official SD release, using the unchanged tested package. It
+addresses the v1.4.3 "sysmgr PID 10 not found" error.
 **PROVEN (source/tests):** timing and gamma use checked service discovery
 across 32 slots. **PROVEN (supplied tester log):** the affected console uses
 PID 9 and the RC resolves all 54 targets. **CLAIMED (tester):** app/XMB 240p,
-timed recovery and background correction work; PS1 audio/crop issues remain
-open. [Audio report](docs/PS1_AUDIO_REPORT.md).
+timed recovery and background correction work. Their PS1 audio/crop issues
+were resolved by switching to **ps1_netemu**; this is a reported workaround,
+not proof of universal ps1_emu incompatibility. [Audio report](docs/PS1_AUDIO_REPORT.md).
 [Install/test steps and evidence](docs/RELEASE_v1.4.4-rc1.md).
-This SD build excludes experimental 540p; stable v1.4.3 remains available.
+This SD build excludes experimental HDMI modes. The separate
+[v1.4.4-rc2 diagnostic prerelease](https://github.com/Gabarsolon/ps3-240p/releases/tag/v1.4.4-rc2)
+adds bounded logging; it is unnecessary for users whose setup already works.
 
 ## Experimental HDMI 540p prerelease
 
@@ -70,7 +69,7 @@ completes. **CLAIMED (owner):** the manual test works.
 HD CRT/component compatibility and game coverage remain **UNKNOWN**;
 the HD test currently accepts HDMI only. It does not keep 540p permanently.
 [Install steps, required checks and tester feedback](docs/RELEASE_v1.5.0-dev19.md).
-Stable v1.4.3 remains the normal release.
+The official SD release above remains the normal download.
 
 ## Experimental HDMI PC presets
 

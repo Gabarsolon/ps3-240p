@@ -15,7 +15,9 @@ v1.4.3 lookup failure on this console; NOR hardware alone was not the cause.
 **CLAIMED (tester):** v1.4.4-rc1 works in the app and XMB, timed 240p recovery
 and background correction. The tester also reports lower-pitched/crackling
 audio and some crop in NTSC Toy Story 2 and Battle Hunter at 240p.
-These separate issues remain **UNKNOWN** in cause; see
+**CLAIMED (tester follow-up, 22:25):** selecting `ps1_netemu` resolved both
+audio and crop, also in Spider-Man 2000. The exact cause remains **UNKNOWN**;
+the owner approved the unchanged rc1 package as the official SD release. See
 [PS1 audio/crop investigation](PS1_AUDIO_REPORT.md). No external 288p,
 gamma, other-firmware or other-model success is claimed from this report.
 

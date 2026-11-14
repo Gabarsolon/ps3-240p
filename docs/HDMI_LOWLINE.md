@@ -1,9 +1,9 @@
 # HDMI 240p / 288p investigation
 
-Started 2026-11-14 while the owner tests PS1 analog audio. This milestone is
-offline only: no console requests, installations, controller actions, mode
-changes or capture-device access. **UNKNOWN:** working PS3 HDMI 240p/288p.
-The existing analog and 540p implementations remain unchanged.
+Started 2026-11-14 while the owner tested PS1 analog audio. The initial
+reference audit was offline only; subsequent stock HDMI controls are
+recorded below. **UNKNOWN:** working PS3 HDMI 240p/288p. No low-line HDMI
+timing candidate has been applied. The analog and 540p recipes are unchanged.
 
 ## What HDMI needs
 
@@ -153,6 +153,44 @@ The following are **INFERRED next steps**, not implemented capabilities:
    latency remain UNKNOWN. A progressive HDMI raster does not establish
    zero buffered frames or zero latency.
 
-**Current boundary:** a reference/audit tool and an address-backed starting
-point exist. No console helper, package, app-menu option or working HDMI
-240p/288p result is claimed. Live work waits while the owner uses the CRT.
+## Stock HDMI controls (2026-11-14 evening)
+
+**PROVEN (checked artifact and live log):** a separate stock-only helper
+selected native 480p from idle 1080p XMB, held for 15.109079 seconds after
+readiness and restored the exact saved native/AV-head state. The final
+helper SHA-256 is
+`97dc5b775eaf329b288f2ec2d0e7eee2fd0262b996f5971135562b8102f03df8`.
+Its LV1 transport refuses writes; mode changes use the fingerprinted native
+VSH API. It does not replace the installed app, saved boot preference or
+release helper. Evidence: ignored
+`local_only/hdmi_lowline/480p-20261114-223242/{helper.log,report.json}`.
+
+**PROVEN (software/USB readback):** the active AV head described a 720x480
+source, pitch 3072, 480-active/525-total raster; the software AVI packet had
+VIC 3 with zero repeat. One sparse USB live sample returned 720x480 and scan
+0x07, while cached dimensions stayed 1920x1080 and cached signal said absent.
+**UNKNOWN:** the exact capture-firmware mapping/refresh. Evidence: the same
+folder's `receiver.json`; [status interpretation](CAPTURE_INPUT_STATUS.md).
+
+**PROVEN (saved OBS frames):** the picture stayed black during the stock
+480p hold, and returned on restoration to 1080p. This control therefore
+fails picture validation despite successful software completion. A previous
+undisturbed stock-480p hold was also black before any live USB-register query.
+**CLAIMED (owner):** selecting normal 480p through XMB likewise makes OBS
+black. **INFERRED:** the 480p capture-path failure is independent of a
+custom low-line timing patch. Receiver/USB processing and the HDMI chain
+need to be separated before treating black 240p as a PS3 timing failure.
+
+**PROVEN (initial control limitation):** native mapper request 5 returned
+failure on this connected HDMI setup. The first helper nonetheless
+submitted its manually audited 576p mode; it timed out and latched failed
+recovery. Later independent readback showed idle stock 1080p and no RAM
+patch, and a normal webMAN soft reboot cleared that stopped helper. No
+storage check was started. The revised guard refuses an unavailable native
+mapping before submitting a mode, avoids restarting an in-flight recovery,
+and allows a bounded 20-second recovery interval. Evidence:
+`576p-20261114-222546/`, `post-control/`, and the revised artifact above.
+
+**Current boundary:** no low-line HDMI candidate, package or app-menu option
+has been tested. Console-side stock recovery works in the revised NTSC
+control; working HDMI 240p/288p and a readable SD capture remain **UNKNOWN**.

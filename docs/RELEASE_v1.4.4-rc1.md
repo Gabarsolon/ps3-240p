@@ -1,85 +1,77 @@
-# CRT Toolset v1.4.4-rc1 — sysmgr PID compatibility test
+# CRT Toolset v1.4.4-rc1 — official SD release
 
-**Post-publication update (2026-11-14):** **PROVEN in the supplied log:** the
-affected tester's sysmgr is PID 9 and this RC resolves all 54 targets.
-**CLAIMED (tester):** 240p works in XMB/app, timed recovery and background
-correction. PS1 audio pitch/crackling and crop are separately reported and
-unresolved; this remains a prerelease. See the
-[updated model report](https://github.com/Gabarsolon/ps3-240p/blob/main/docs/CECH2004A_LOOKUP_REPORT.md)
-and [audio investigation](https://github.com/Gabarsolon/ps3-240p/blob/main/docs/PS1_AUDIO_REPORT.md).
-The original publication-time assessment below is historical.
+The owner approved promoting this tested build to the official release on
+2026-11-14. The existing tag, download names and in-app version retain
+`rc1`; the package is unchanged. This promotion does not add the rc2 audio
+logger or the separate experimental HDMI features.
 
-This SD prerelease targets the v1.4.3 error:
+## What changes from v1.4.3
+
+**PROVEN (implementation):** fixes the fixed-PID lookup behind this error:
 
 ```text
 PATCH ERROR: 4.93 sysmgr PID 10 not found; check CFW syscalls
 ```
 
-**PROVEN (implementation):** timing patches and gamma readback now discover
-the supported `sysmgr` across all 32 process slots instead of assuming PID 10.
-Discovery verifies its immutable service fingerprint, checks for ambiguous
-matches and rechecks the process table/mappings before returning. Existing
-patch-byte checks and rollback remain in place. Logs now distinguish zero
-process pointers, no verified service, duplicate identities and changed
-snapshots. [Implementation and evidence](https://github.com/Gabarsolon/ps3-240p/blob/v1.4.4-rc1/docs/SYSMGR_DISCOVERY.md).
+Timing patches and gamma now discover the supported `sysmgr` across all
+32 process slots. Discovery verifies immutable service identity, rejects
+ambiguous matches, and rechecks process/page mappings. Existing checked
+writes and rollback remain in place.
+[Implementation and validation](https://github.com/Gabarsolon/ps3-240p/blob/main/docs/SYSMGR_DISCOVERY.md).
 
-**CLAIMED (owner, 2026-11-14):** after installing this exact RC package for
-CRT testing, the owner reported: “I've tested it and it works.” This is an
-owner-console result, not confirmation from the affected CECH-2004A.
+**PROVEN (supplied external log):** the affected CECH-2004A setup uses PID 9
+and this build resolves all 54 timing targets. **CLAIMED (tester):** timed
+240p recovery and background enforcement work in XMB and the app.
+**CLAIMED (owner):** the same package also works on the owner's CRT setup.
+[External result](https://github.com/Gabarsolon/ps3-240p/blob/main/docs/CECH2004A_LOOKUP_REPORT.md).
 
-**UNKNOWN:** whether the external CECH-2004A failure is caused by a shifted
-PID and whether this candidate fixes that console. Other firmware layouts
-and ordinary HEN support have not been added. This retains the supported
-4.93 CFW/Cobra backend.
+**PROVEN (package scope):** includes SD 240p/288p, background enforcement,
+stock 480i/576i selection and analog gamma. Title ID is `PS240P001`, package
+version **01.44**, menu version **v1.4.4-rc1**. Source: the checked package
+manifest and `tools/build_ps3_app.py --pid-compatibility`.
+The supported timing backend remains **4.93 CFW + Cobra**. Ordinary HEN and
+HDMI 240p/288p are not supported by this release; experimental HDMI 540p/PC
+presets remain separate development builds.
 
-## Install and test
+## Installation
 
-1. Exit CRT Toolset. Install **CRT-Toolset-1.4.4-rc1.pkg** through XMB Package
-   Manager, then **reboot once** to clear an older resident helper.
-2. Use your normal analog SD/CRT connection, with the usual CFW/Cobra
-   syscalls enabled. Open CRT Toolset and confirm **v1.4.4-rc1** in its title.
-3. Select **Recheck timing memory** first. If it fails, stop there and send
-   `/dev_hdd0/tmp/ps3_240p.log`.
-4. If memory is recognized, select the timed **Test 240p** or **Test PAL 288p**.
-   Leave the controller untouched to check its automatic 15-second return.
-5. Report the console model, firmware/Cobra versions, output cable, whether
-   the picture works and whether recovery completes. Include the app log;
-   `/dev_hdd0/tmp/vsh_240p.log` is also useful for helper/enforcement issues.
+1. Exit CRT Toolset, install **CRT-Toolset-1.4.4-rc1.pkg** through XMB Package
+   Manager, then reboot normally once to clear an older resident helper.
+2. Use your analog SD/CRT connection with the usual CFW/Cobra syscalls
+   enabled. Confirm **v1.4.4-rc1** in the menu.
+3. Start with **Recheck timing memory**, then the timed **Test 240p** or
+   **Test PAL 288p** before enabling background enforcement.
 
-**PROVEN (package scope):** this updates title ID `PS240P001`, package
-version **01.44**, with menu version **v1.4.4-rc1**. It is an SD compatibility
-build and does **not** include the experimental HDMI 540p menu from
-v1.5.0-dev19. Stable v1.4.3 and the separate HDMI prerelease remain available.
-Sources: package manifest, `tools/build_ps3_app.py --pid-compatibility`.
+If discovery fails, stop and retain `/dev_hdd0/tmp/ps3_240p.log`.
+For enforcement issues, also retain `/dev_hdd0/tmp/vsh_240p.log`.
+[Gamma and TV calibration guide](https://github.com/Gabarsolon/ps3-240p/blob/main/docs/CRT_CALIBRATION.md).
 
-## Validation and limits
+## PS1 compatibility note
 
-**PROVEN:** synthetic regression tests cover every PID position 0–31,
-SD apply/exact undo, gamma with a relocated service, decoys, duplicate
-identities, unavailable reads, malformed lists, MMIO refusal and changing
-snapshots. The complete host suite, private 4.93 firmware fingerprint/target
-checks, helper loader contract and decrypted package-member checks passed.
-The owner's native read-only lookup found one service at PID 10, 109 pages
-and all 54 timing targets. See the linked evidence document for sources.
+**CLAIMED (tester):** `ps1_emu` produced lower-pitched/crackling audio and a
+zoomed/cropped picture on their setup. Switching the launcher to
+**`ps1_netemu` resolved both**, including Toy Story 2, Battle Hunter and
+Spider-Man 2000. Try that alternative if you encounter these symptoms.
+This is a reported workaround; `ps1_emu` is not established as universally
+incompatible. Exact cause, integer scaling and latency remain **UNKNOWN**.
+[Report, emulator evidence and startup-path caveat](https://github.com/Gabarsolon/ps3-240p/blob/main/docs/PS1_AUDIO_REPORT.md#tester-workaround-select-ps1_netemu-2026-11-14).
 
-**UNKNOWN:** an earlier HDMI capture was black while this SD app was open,
-despite responsive input and completed frame/log activity. Normal exit
-returned to visible XMB. That capture issue remains unexplained; the later
-owner-reported CRT success does not establish HDMI behavior or other-model
-compatibility.
+## Validation and download integrity
 
-## Download integrity
+**PROVEN (prior checks):** all 32 relocated PIDs, SD apply/exact undo,
+gamma with a relocated service, decoys, duplicate identities, denied reads,
+malformed lists and changing mappings passed regression checks. Private
+4.93 identities, helper loader behavior and decrypted package members were
+also checked. Sources: the linked discovery evidence and
+`tools/test_app.py --firmware`.
 
-**PROVEN (artifact identity):** this is the existing installed/tested package,
-without a new binary rebuild. Source: the local package manifest and checked
-installation report, recorded in the linked evidence document.
-
-`CRT-Toolset-1.4.4-rc1.pkg` — **255568 bytes**
-
-SHA-256:
+**PROVEN (promotion check):** all three existing release assets were
+downloaded and verified against their GitHub SHA-256 digests. The tested
+PKG remains **255568 bytes**, SHA-256:
 
 ```text
 e35062e49bdb6a3cb785442c49d5e8e855389d44d92590fd2bfa3aba5614165e
 ```
 
-`SHA256SUMS.txt` and `package_manifest.json` accompany the package.
+`SHA256SUMS.txt` and `package_manifest.json` accompany it. Local publication
+evidence: ignored `local_only/releases/promote-rc1-20261114/`.

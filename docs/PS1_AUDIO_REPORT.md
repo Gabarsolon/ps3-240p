@@ -3,6 +3,11 @@
 Checkpoint: 2026-11-14. External messages and app log relayed by the owner.
 Reporter identity, console and audio have not been independently measured.
 
+**Latest follow-up (CLAIMED, tester, 22:25):** switching from `ps1_emu` to
+`ps1_netemu` resolved both audio and cropping on their setup. The rc2
+diagnostic is no longer needed to establish that reported workaround.
+See [workaround and limits](#tester-workaround-select-ps1_netemu-2026-11-14).
+
 ## Observations
 
 - **CLAIMED (tester):** v1.4.4-rc1 works in the app and XMB at 240p, including
@@ -57,7 +62,8 @@ These are proposed checks (**INFERRED**), not completed tester results:
    normal audio in stock 480i; do not repeatedly request this same check.
 2. Record whether the emulator is `ps1_emu` or `ps1_netemu`, launch method,
    exact game region/release and audio path. **CLAIMED:** NTSC versions and
-   analog white-RCA audio to a mono CRT are now known; emulator choice and
+   analog white-RCA audio to a mono CRT are now known. The later follow-up
+   identifies ps1_emu as the failing choice and ps1_netemu as working;
    exact releases remain unreported.
 3. Collect the helper log during game launch and inspect game-time video and
    audio readback. Distinguish an actual slower emulation cadence from a
@@ -70,7 +76,8 @@ These are proposed checks (**INFERRED**), not completed tester results:
 
 The PID compatibility result is recorded in
 [the model report](CECH2004A_LOOKUP_REPORT.md). Audio/crop compatibility
-remains open; keep the build a prerelease.
+was subsequently addressed by the reported emulator workaround. The owner
+approved promoting the unchanged rc1 package to the official SD release.
 
 ## Owner-console investigation (2026-11-14 evening)
 
@@ -212,6 +219,48 @@ keep the exact game, emulator, audio route and input sequence fixed while
 comparing stock 480i and 240p. Separate pre-DAC PCM, actual analog playback,
 game/video cadence and stock restoration. Preserve the existing known
 working timing recipe until a discriminating test justifies changing it.
+
+### Tester workaround: select ps1_netemu (2026-11-14)
+
+**CLAIMED (roxollo's follow-up supplied by the owner, 22:25):** selecting
+`ps1_netemu` instead of `ps1_emu` fixes both the low-pitched/crackling audio
+and the zoom/crop on the previously reported CECH-2004A setup. The tester
+reports success with Toy Story 2, Battle Hunter and Spider-Man 2000, and
+with both mounted disc images and installed PS1 titles. This is a useful
+tester-confirmed workaround, not an independently reproduced root cause.
+
+**CLAIMED (same tester):** emulator selection reverted after reboot. Their
+workaround is `/dev_hdd0/tmp/boot_init.txt` containing this single line:
+
+```text
+/netemu.ps3?1
+```
+
+Preserve any existing startup script when adding a command. This report
+does not establish that every webMAN build supports the same startup hook.
+**PROVEN (upstream source):** webMAN's `select_ps1emu` selects the alternative
+through runtime path mappings; the names in `/dev_flash` are mapping targets,
+not instructions to replace or write firmware files.
+Source: [webMAN emulator selector](https://github.com/aldostools/webMAN-MOD/blob/master/include/mount/psxemu.h#L33-L50).
+The exact command/startup combination above remains attributed to the tester.
+
+**CLAIMED (official webMAN documentation):** the documented startup location
+is `/dev_hdd0/boot_init.txt`, directly under the drive root, rather than
+the tester's reported `/dev_hdd0/tmp/boot_init.txt`. Use the documented
+location when giving new instructions; the supplied report alone does not
+prove a `/tmp/` hook. Source:
+[custom startup tasks](https://github.com/aldostools/webMAN-MOD/wiki/webMAN-MOD-Customization#custom-tasks-at-start-up),
+which names `/dev_hdd0/boot_init.txt` and `/dev_hdd0/autoexec.bat`.
+
+**CLAIMED (owner's earlier CRT comparison):** both reported games also have
+normal audio on the owner's setup. The recorded automated HDMI launches
+used the checked `ps1_emu` image; the emulator used during the owner's
+later manual CRT test was not independently observed. **UNKNOWN:** why the two
+setups differ, whether the launch method or model contributes, and whether
+the alternative preserves pixel-perfect scaling or changes latency. Do not
+describe `ps1_emu` as universally incompatible with 240p, or the original
+timing recipe as fixed by changing an audio clock. No timing change was
+needed for the reported workaround.
 
 **PROVEN (cleanup):** normal soft reboot removed the temporary sampler;
 only webMAN remained in VSH slot 1. The original empty enforcement flag was

@@ -2,6 +2,12 @@
 
 [Download the diagnostic prerelease](https://github.com/Gabarsolon/ps3-240p/releases/tag/v1.4.4-rc2).
 
+**Later tester follow-up (CLAIMED, 2026-11-14):** switching to `ps1_netemu`
+resolved the reported audio and crop. This diagnostic is optional; the
+unchanged [rc1 build is the official SD release](RELEASE_v1.4.4-rc1.md).
+The investigation-time purpose and instructions below are retained for
+anyone collecting a new failure report.
+
 **Purpose:** collect game-time evidence for the CECH-2004A report of lowered
 pitch and crackling in 240p. **CLAIMED (owner, 2026-11-14):** Toy Story 2 and
 Battle Hunter sound normal in 240p on the owner's CRT setup. The external
