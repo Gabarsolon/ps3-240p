@@ -1,6 +1,6 @@
 {
   "updated": "2026-11-14",
-  "note": "PROVEN: Toy Story 2 and Battle Hunter inspected and run under ps1_emu on owner HDMI; matched sampled XA coding with Mega Man X4. Stock analog control restores HDMI but loses capture audio. Read-only resident pre-DAC sampler validated. UNKNOWN: analog pitch/crackle cause and fix; no correction released.",
+  "note": "PROVEN offline: HDMI 240p/288p reference timings, AVI/repetition fields and source-fetch bounds checked; known 4.93 ELF audit finds no existing low-line HDMI templates. Nine focused tests pass. UNKNOWN: live HDMI output. Owner CRT/audio testing left undisturbed; PS1 audio cause and fix remain unknown.",
   "workstreams": [
     {
       "name": "240p / 288p and analog gamma",
@@ -16,6 +16,11 @@
       "name": "HDMI 540p",
       "status": "PROVEN: full XMB picture and receiver-reported progressive output in timed dev19 test. UNKNOWN: HD CRT, component and game compatibility; no permanent enforcement.",
       "evidence": "[540p prerelease](docs/RELEASE_v1.5.0-dev19.md)"
+    },
+    {
+      "name": "HDMI 240p / 288p",
+      "status": "PROVEN offline: SD HDMI routes and pixel-repeat fields audited; no low-line VIC in the checked 4.93 template table. Reference timing/AVI/buffer-bound tool and nine tests pass. UNKNOWN: transmitter/receiver acceptance and a working console implementation; console untouched during owner CRT tests.",
+      "evidence": "[HDMI low-line investigation](docs/HDMI_LOWLINE.md)"
     },
     {
       "name": "Resolution presets and scaling",
