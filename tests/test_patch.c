@@ -7,7 +7,7 @@
 #include <string.h>
 
 static unsigned char ram[0x02000000];
-static int stores,drop_store,video_calls,fail_video_call,unavailable;
+static int stores,drop_store,video_calls,fail_video_call,unavailable,hd_avail=1;
 static unsigned calls[16];
 static patch_context c;
 static int cache_unstable,cache_reads;
@@ -43,7 +43,7 @@ static uint64_t physical(uint32_t va)
 static void setup(void)
 {
  memset(ram,0,sizeof(ram));memset(&c,0,sizeof(c));c.read=get;c.write=set;
- stores=drop_store=video_calls=fail_video_call=unavailable=0;
+ stores=drop_store=video_calls=fail_video_call=unavailable=0;hd_avail=1;
  cache_unstable=cache_reads=0;
  put64(0x36cdb0+10*16+8,0x120000);put32(0x120000,10);put64(0x120018,0x121000);
  put64(0x121000,0x35ecb8);put32(0x12103c,0x122000);
@@ -102,7 +102,7 @@ static void setup(void)
 }
 static void is_stock(void)
 {for(int i=0;i<PATCH_WORDS;i++)assert(get(NULL,c.address[i])==c.stock[i]);}
-static int avail(void *u,unsigned id){(void)u;assert(id==4||id==5);return unavailable?unavailable:1;}
+static int avail(void *u,unsigned id){(void)u;if(id==1||id==2)return hd_avail;assert(id==4||id==5);return unavailable?unavailable:1;}
 static int video(void *u,unsigned id)
 {(void)u;assert(video_calls<16);calls[video_calls++]=id;return video_calls==fail_video_call?-1:0;}
 static switch_flow flow(void)
@@ -213,18 +213,20 @@ int main(void)
  assert(!f.pending&&video_calls==4&&calls[2]==4&&calls[3]==5);is_stock();
  setup();f=flow();assert(!switch_begin(&f,0,5,1));switch_keep(&f);
  assert(!f.pending&&patch_state(&c,0)==STATE_PATCHED);assert(!switch_stock(&f,4,1));is_stock();
- /* A region-locked console cannot configure the other SD family: the leave
-  * (configure of the alternate) fails, so the patch is applied through head
-  * profile-index cache invalidation and a repeat of the current mode. */
- setup();f=flow();put64(c.video_address[26],UINT64_C(0x0000000500000005));
- fail_video_call=1;
+ /* dev8: a region-locked console cannot configure the other SD family (the
+  * configure of the alternate fails). The fallback forces a real mode change by
+  * bouncing through an available HD mode (720p) so the return to the SD target
+  * re-runs the mode-setter and loads the patched table. */
+ setup();f=flow();
+ fail_video_call=1; /* configure(alternate) refused: single-SD path */
  assert(!switch_begin(&f,1,5,1));
  assert(f.pending&&patch_state(&c,1)==STATE_PATCHED);
- assert(get(NULL,c.video_address[26])==UINT64_C(0x0000000500000000)); /* head 1 flag cleared */
- /* Issue #1: an NTSC console drives 480i on head 1, not head 0. The single-SD
-  * fallback for a 480i target (default head 0) must invalidate the ACTUALLY
-  * programmed head (head 1), or the active timing is never reprogrammed. */
- setup();f=flow();
+ assert(video_calls==3&&calls[0]==4&&calls[1]==2&&calls[2]==5); /* alternate, HD bounce 720p, target */
+ assert(!switch_revert(&f));is_stock();
+ /* No HD mode either (720p and 1080i unavailable): last-resort head-flag
+  * invalidation. Issue #1: an NTSC console drives 480i on head 1, so the cleared
+  * head must be the ACTUALLY programmed one (head 1), not the target default. */
+ setup();f=flow();hd_avail=0;
  for(int i=0;i<7;i++)put64(c.video_address[9+i],get(NULL,c.video_address[2+i]));   /* head1 raster = head0 */
  for(int i=0;i<5;i++)put64(c.video_address[21+i],get(NULL,c.video_address[16+i])); /* head1 request = head0 */
  put64(c.video_address[26],UINT64_C(0x0000000000000002));                          /* head0 idle, head1 active */

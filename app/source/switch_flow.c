@@ -42,15 +42,17 @@ int switch_revert(switch_flow *f)
   * NTSC unit refusing 576i, say) must still recover, so only a failure to
   * reach the original profile is fatal. When the forward flip failed before
   * leaving the original, the display never changed and this confirms it. */
- /* Also invalidate the original head's cached index so returning to the
-  * original mode reprograms stock timing even when the bounce could not leave
-  * it (the console refused the other SD family). Pick the head actually
-  * programmed (region does not fix the family/head map); fall back to the
-  * target-derived default only when detection is ambiguous. Best-effort. */
- int rhead=patch_active_head(f->patch);
- if(rhead<0)rhead=f->original==5?1:0;
- int a=f->configure(f->user,f->original==4?5:4);(void)a;
- (void)patch_invalidate_head(f->patch,rhead);
+ /* dev8: prefer the other SD family (15 kHz-safe). If it is refused (single-SD
+  * console), bounce through an available HD mode so returning to the original SD
+  * id is a genuine mode change that re-runs the mode-setter and reprograms stock
+  * timing. Head-flag invalidation is ineffective on single-SD consoles (issue
+  * #1), so it is only a last resort when no HD mode exists. Best-effort: only a
+  * failure to reach the original profile is fatal. */
+ if(f->configure(f->user,f->original==4?5:4)){
+  unsigned bounce=f->available(f->user,2)>0?2u:f->available(f->user,1)>0?1u:0u;
+  if(bounce){(void)f->configure(f->user,bounce);}
+  else{int rhead=patch_active_head(f->patch);if(rhead<0)rhead=f->original==5?1:0;(void)patch_invalidate_head(f->patch,rhead);}
+ }
  int b=f->configure(f->user,f->original);
  if(b)return fail(f,"RAM restored; display recovery failed. Reboot console");
  f->pending=0;return 0;
@@ -75,19 +77,33 @@ int switch_begin_target(switch_flow *f,int family,unsigned target,unsigned curre
  /* Preferred path: leave the candidate's SD profile for the other SD family
   * and return, so the AV manager's profile-change gate reprograms the patched
   * table. A region-locked console exposes only its own SD standard and cannot
-  * configure the other family, so when that leave fails, fall back to
-  * invalidating the head's cached profile index: the AV manager then reprograms
-  * from the patched table on a repeat of the current mode, with no family
-  * change. The head to clear is the one actually programmed in the AV cache, not
-  * a target-derived guess: an NTSC console drives 480i on head 1 (issue #1), so
-  * target==4 does not imply head 0. Fall back to the old map only if ambiguous. */
- int head=patch_active_head(f->patch);
- if(head<0)head=f->target==5?1:0;
+  * configure the other family, so when that leave fails, fall back.
+  *
+  * dev8: the single-SD fallback forces a real mode change instead of clearing a
+  * head cache flag. The dev7 live log (issue #1) proved that on a single-SD NTSC
+  * console a same-mode re-request (videoConfigure id=4 while already id=4) is a
+  * no-op that never reaches the AV mode-setter, and that zeroing the programmed
+  * head's profile-index flag does not force a reprogram (Post-switch match=0,
+  * head still stock 480/525). So bounce through an available HD mode (720p, else
+  * 1080i): the return to the SD target is then a genuine id change that re-runs
+  * the mode-setter and loads the patched table. 480p is not reachable here
+  * (same id as 480i, only scanMode differs, and configure() sets no scanMode).
+  * The HD bounce is briefly non-15 kHz (black on a 15 kHz CRT) but transient; a
+  * failure reverts cleanly. If no HD mode is available either, fall back to the
+  * old head-flag invalidation (ineffective on issue #1, but harmless). */
  int rc;
  if(f->configure(f->user,f->alternate)){
-  if(f->patch->log)f->patch->log("Single-SD fallback: invalidate head=%d (target=%u default=%d)",
-   head,f->target,f->target==5?1:0);
-  rc=patch_apply(f->patch,family)||patch_invalidate_head(f->patch,head)||f->configure(f->user,f->target);
+  unsigned bounce=f->available(f->user,2)>0?2u:f->available(f->user,1)>0?1u:0u;
+  if(f->patch->log)f->patch->log("Single-SD fallback: HD bounce id=%u (alternate=%u refused)",
+   bounce,f->alternate);
+  if(bounce){
+   rc=f->configure(f->user,bounce)||patch_apply(f->patch,family)||f->configure(f->user,f->target);
+  }else{
+   int head=patch_active_head(f->patch);
+   if(head<0)head=f->target==5?1:0;
+   if(f->patch->log)f->patch->log("Single-SD fallback: no HD mode; invalidate head=%d",head);
+   rc=patch_apply(f->patch,family)||patch_invalidate_head(f->patch,head)||f->configure(f->user,f->target);
+  }
  }else{
   rc=patch_apply(f->patch,family)||f->configure(f->user,f->target);
  }

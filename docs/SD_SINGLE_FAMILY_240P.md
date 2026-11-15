@@ -37,17 +37,51 @@ that is actually programmed (AV cache `state==2`, `patch_active_head`) and clear
 that one; the target-derived default is a fallback only when 0 or 2 heads are
 active.
 
+### dev7 live result and why the cache lever fails (corrected in dev8)
+
+The dev7 live log (issue #1, NTSC, component) proved dev7 selected the right head
+(head 1, flag `state 2 -> 0`) but the patched timing still never activated:
+
+```text
+Single-SD fallback: invalidate head=1 (target=4 default=0)
+AV head 1 profile-index cache invalidated (0000000000000002->0000000000000000)
+videoConfigure id=4 result=00000000
+Post-switch analog AV cache match=0 ... Head1=480/525   (still stock 480i)
+```
+
+- **PROVEN (issue #1 dev7 log):** `videoConfigure(id=4)` while the console is
+  **already id=4** returns success WITHOUT calling the mode-setter `0x800005e4`,
+  so the zeroed profile-index flag is never consulted and the patched raster
+  (table RAM only) is never loaded into the live head. The 576i bounce is refused
+  (`videoConfigure id=5 result=8002b226`). So on a single-SD console neither lever
+  (family flip, head-flag invalidation) reaches the mode-setter. The "state" field
+  in the AV CACHE log is that profile-index flag (2 = valid, 0 = clear).
+
+### dev8: force a real mode change (HD bounce)
+
+To reach the mode-setter, the SD target must be re-entered from a **different**
+resolution id. 480p is not usable (same id 4 as 480i, differing only by
+`scanMode`, which `configure()` does not set), so the bounce uses an available HD
+mode: **720p (id 2), else 1080i (id 1)**. `480i -> 720p -> 480i` is a genuine id
+change; the mode-setter runs and loads the patched table. The HD bounce is briefly
+non-15 kHz (black on a 15 kHz CRT) but transient. UNKNOWN until live test on the
+issue #1 console: whether 720p is configurable over its component cable and
+whether the return actually loads the patched raster. Fails safe to stock.
+
 ## Implementation
 
-- `patch_invalidate_head(patch_context *, int head)` (`app/source/lv1_patch.c`):
-  zero the selected head's 32-bit half of `video_address[26]`, readback-checked.
 - `switch_begin_target` (`app/source/switch_flow.c`): keep the proven flip as
   the primary path (no regression on consoles that can configure the other SD
-  family); when `configure(alternate)` fails, fall back to
-  `patch_apply` → `patch_invalidate_head(patch_active_head())` → `configure(target)`.
-- `switch_revert`: invalidate the active head before returning to the original
-  mode, so recovery reprograms stock timing even when the other family cannot
-  be configured. Only a failure to reach the original mode is fatal.
+  family); when `configure(alternate)` fails, bounce via an available HD mode:
+  `configure(720p|1080i)` → `patch_apply` → `configure(target)`. If no HD mode is
+  available, last-resort `patch_invalidate_head(patch_active_head())` (dev7
+  behaviour; ineffective per the log, but harmless).
+- `switch_revert`: prefer the other SD family; if refused, HD-bounce before
+  returning to the original mode, so recovery reprograms stock timing. Only a
+  failure to reach the original mode is fatal.
+- `patch_invalidate_head(patch_context *, int head)` (`app/source/lv1_patch.c`):
+  zero the selected head's 32-bit half of `video_address[26]`, readback-checked
+  (now last-resort only).
 - `patch_active_head` (dev7): the single head with AV cache `state==2`, else -1.
 
 Routing by actual configurability (does `configure(alternate)` succeed) rather
@@ -56,13 +90,15 @@ standard and is unreliable for this decision.
 
 ## Status
 
-- Host tests: 44/44 (`python -B tools/test_app.py`), incl. a fallback case and
-  an NTSC head-1-active case (dev7).
-- dev6 live result (issue #1, NTSC/component): reverted cleanly but never
-  activated — it cleared idle head 0 while live head 1 kept stock timing.
-  dev7 clears the active head; live verification still pending on that console.
-- UNKNOWN until a live single-SD console test: whether a repeat of the
-  current mode reaches `0x800005e4` so the invalidated flag triggers the
-  reprogram. If it does not, `begin_picture`'s candidate-active check fails and
-  the flow reverts cleanly. Primary (flip) path verified on the owner's PAL
-  console (no regression).
+- Host tests: 44/44 (`python -B tools/test_app.py`), incl. an HD-bounce case and
+  a no-HD last-resort NTSC head-1 case (dev8).
+- dev6 live (issue #1, NTSC/component): reverted cleanly but never activated —
+  cleared idle head 0 while live head 1 kept stock timing.
+- dev7 live (issue #1): selected the right head (head 1) but still never
+  activated — a same-mode re-request never reaches the mode-setter, so clearing
+  the flag does nothing (`Post-switch ... match=0`, head still stock 480/525).
+- dev8: bounces through an HD mode (720p/1080i) to force a real mode change.
+  UNKNOWN until live test on the issue #1 console: whether 720p is configurable
+  over that component cable and whether the return loads the patched raster.
+  Fails safe to stock. Primary (flip) path verified on the owner's PAL console
+  (no regression).
