@@ -39,7 +39,7 @@ Current feature status (separate from the weighted research estimate):
 | HEN diagnostic and port | PROVEN: diagnostic builds and public-only CFW smoke pass. Additional native/gamma/mapping paths inspected offline; no ordinary-HEN 240p/288p route established. Actual HEN runtime untested. | [Alternative paths](docs/HEN_ALTERNATIVE_PATHS.md); [diagnostic scope](docs/HEN_DIAGNOSTIC.md) |
 | Community compatibility and measurements | CLAIMED: external tester resolves PS1 audio/crop by selecting ps1_netemu; owner reports normal CRT audio. PROVEN: rc1 assets retain their checked digests; the unchanged rc1 build is now the official Latest SD release. UNKNOWN: exact emulator/setup difference, integer scaling and latency. | [PS1 report](docs/PS1_AUDIO_REPORT.md); [rc2 diagnostic](docs/RELEASE_v1.4.4-rc2.md); [tracked requests](docs/DISPLAY_PRESETS_ROADMAP.md#other-community-requests-to-track) |
 
-_Last update: 2026-11-15. 540p HDMI fixed: stock AVI (VIC-0 patch broke sink lock) + 720p-step pitch change so the doubled fetch applies in-app; full picture from 1080i and 1080p_
+_Last update: 2026-11-15. v1.6.0-dev5: SD timing gate accepts single exposed SD family; owner-tested PAL 576i Test 288p_
 <!-- progress:end -->
 
 The progress block is generated from `docs/progress.json`; percentages estimate work, not electrical verification.
