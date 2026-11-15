@@ -50,6 +50,13 @@ int patch_apply(patch_context *,int family); /* Also restores the other family. 
 int patch_restore(patch_context *);
 int patch_undo(patch_context *); /* Restore exact pre-experiment snapshot. */
 int patch_read_cached_video(patch_context *,patch_cached_video *);
+/* Zero the AV manager's cached per-head profile-index "valid" flag
+ * (video_context+0x228: head 0 high word, head 1 low word). The next mode
+ * request for that head is then seen as a profile change and reprograms the
+ * RSX CRTC from the patched table, even when the request repeats the current
+ * mode. This lets a console that cannot configure the opposite SD family apply
+ * the timing without a 480i<->576i flip. head 0 = 480i analog, head 1 = 576i. */
+int patch_invalidate_head(patch_context *,int head);
 /* AV-service software cache match only; not a physical waveform measurement. */
 int patch_candidate_in_cache(const patch_context *,const patch_cached_video *,int family);
 int patch_candidate_on_head(const patch_context *,const patch_cached_video *,int family,int head);

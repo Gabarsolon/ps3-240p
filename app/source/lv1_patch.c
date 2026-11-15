@@ -295,3 +295,21 @@ int patch_apply(patch_context *c,int family)
 int patch_restore(patch_context *c){return transaction(c,c->stock);}
 int patch_undo(patch_context *c)
 {return c->have_saved?transaction(c,c->saved):fail(c,"No experiment snapshot");}
+int patch_invalidate_head(patch_context *c,int head)
+{
+ if(!c||head<0||head>1)return -1;
+ if(!c->ready||!c->video_ready)return fail(c,"AV context not resolved; cannot invalidate head cache");
+ /* video_address[26] maps video_context+0x228: a 64-bit word whose high half
+  * is head 0's cached profile-index flag and whose low half is head 1's. The
+  * AV mode-setter treats a zero flag as "not programmed" and performs a full
+  * RSX/encoder program. Zero only the selected head; preserve the other. */
+ uint64_t addr=c->video_address[26];
+ uint64_t cur=read64(c,addr);
+ uint64_t next=cur&(head?UINT64_C(0xffffffff00000000):UINT64_C(0x00000000ffffffff));
+ if(next==cur)return 0;
+ c->write(c->user,addr,next);
+ if(read64(c,addr)!=next)return fail(c,"AV head cache invalidation readback failed");
+ if(c->log)c->log("AV head %d profile-index cache invalidated (%016llx->%016llx)",
+  head,(unsigned long long)cur,(unsigned long long)next);
+ return 0;
+}

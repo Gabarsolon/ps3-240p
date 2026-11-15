@@ -36,9 +36,19 @@ int switch_revert(switch_flow *f)
  /* Restore RAM BEFORE issuing a fresh profile-changing transition. */
  int ram=patch_undo(f->patch);
  if(ram)return fail(f,"RAM recovery incomplete. Reboot console");
- int a=f->configure(f->user,f->original==4?5:4);
+ /* Bounce through the other SD family to force the AV manager to reprogram
+  * stock timing, then return to the original profile. The bounce is
+  * best-effort: a console that cannot configure the opposite SD family (an
+  * NTSC unit refusing 576i, say) must still recover, so only a failure to
+  * reach the original profile is fatal. When the forward flip failed before
+  * leaving the original, the display never changed and this confirms it. */
+ int a=f->configure(f->user,f->original==4?5:4);(void)a;
+ /* Also invalidate the original head's cached index so returning to the
+  * original mode reprograms stock timing even when the bounce could not leave
+  * it (the console refused the other SD family). Best-effort. */
+ (void)patch_invalidate_head(f->patch,f->original==5?1:0);
  int b=f->configure(f->user,f->original);
- if(a||b)return fail(f,"RAM restored; display recovery failed. Reboot console");
+ if(b)return fail(f,"RAM restored; display recovery failed. Reboot console");
  f->pending=0;return 0;
 }
 int switch_begin(switch_flow *f,int family,unsigned current,int analog)
@@ -53,10 +63,23 @@ int switch_begin_target(switch_flow *f,int family,unsigned target,unsigned curre
  if(select_modes(f,target,current,analog))return -1;
  if(patch_snapshot(f->patch))return fail(f,f->patch->error);
  f->pending=1;
- /* Leave the candidate's profile before patching it; returning to it must
-  * pass the AV manager's profile-change gate. Check every API result. */
- if(patch_restore(f->patch)||f->configure(f->user,f->alternate)||
-    patch_apply(f->patch,family)||f->configure(f->user,f->target)){
+ if(patch_restore(f->patch)){
+  char cause[200];snprintf(cause,sizeof(cause),"%s",f->patch->error[0]?f->patch->error:"Stock restore failed");
+  if(switch_revert(f))return -1;
+  return fail(f,cause);
+ }
+ /* Preferred path: leave the candidate's SD profile for the other SD family
+  * and return, so the AV manager's profile-change gate reprograms the patched
+  * table. A region-locked console exposes only its own SD standard and cannot
+  * configure the other family, so when that leave fails, fall back to
+  * invalidating the head's cached profile index: the AV manager then reprograms
+  * from the patched table on a repeat of the current mode, with no family
+  * change. head 0 drives 480i, head 1 drives 576i. */
+ int head=f->target==5?1:0;
+ int rc=f->configure(f->user,f->alternate)
+   ? (patch_apply(f->patch,family)||patch_invalidate_head(f->patch,head)||f->configure(f->user,f->target))
+   : (patch_apply(f->patch,family)||f->configure(f->user,f->target));
+ if(rc){
   char cause[200];snprintf(cause,sizeof(cause),"%s",f->patch->error[0]?f->patch->error:"Video configuration failed; see diagnostic log");
   if(switch_revert(f))return -1;
   return fail(f,cause);

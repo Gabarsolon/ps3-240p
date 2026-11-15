@@ -213,9 +213,16 @@ int main(void)
  assert(!f.pending&&video_calls==4&&calls[2]==4&&calls[3]==5);is_stock();
  setup();f=flow();assert(!switch_begin(&f,0,5,1));switch_keep(&f);
  assert(!f.pending&&patch_state(&c,0)==STATE_PATCHED);assert(!switch_stock(&f,4,1));is_stock();
- for(int i=1;i<=2;i++){
-  setup();f=flow();fail_video_call=i;assert(switch_begin(&f,1,5,1)==-1&&!f.pending);is_stock();
- }
+ /* A region-locked console cannot configure the other SD family: the leave
+  * (configure of the alternate) fails, so the patch is applied through head
+  * profile-index cache invalidation and a repeat of the current mode. */
+ setup();f=flow();put64(c.video_address[26],UINT64_C(0x0000000500000005));
+ fail_video_call=1;
+ assert(!switch_begin(&f,1,5,1));
+ assert(f.pending&&patch_state(&c,1)==STATE_PATCHED);
+ assert(get(NULL,c.video_address[26])==UINT64_C(0x0000000500000000)); /* head 1 flag cleared */
+ /* A failed return to the target mode stays fatal and reverts to stock. */
+ setup();f=flow();fail_video_call=2;assert(switch_begin(&f,1,5,1)==-1&&!f.pending);is_stock();
  setup();f=flow();assert(!switch_begin(&f,1,5,1));fail_video_call=4;
  assert(switch_revert(&f)==-1&&f.pending);is_stock();
  /* Both patched families can be enabled with an explicit PAL preference. */
