@@ -1,11 +1,35 @@
-# CRT Toolset v1.6.0-dev4: HDMI custom resolutions (experimental)
+# CRT Toolset v1.6.0-dev4: HDMI custom resolutions
 
-This prerelease adds an **HDMI custom resolutions** menu: **540p (1920x540
-progressive)** for HD CRTs, plus 1024x768, 1280x768, 1280x1024 and 1920x1200.
-Each choice opens a 15-second preview. **X** keeps it for the session;
-**Circle**, or no input, restores the previous output. The helper restores
-stock output by itself even if the app is closed or the PC disconnects.
-It is the exact package tested on the owner's console.
+This release adds an **HDMI custom resolutions** menu with five modes:
+
+| Mode | For | Notes |
+|---|---|---|
+| **540p** (1920x540 progressive, 60 Hz) | HD CRTs | start from XMB 1080i or 1080p |
+| **1024x768** | 4:3 PC monitors / VGA-style CRT setups | start from XMB 1080p |
+| **1280x768** | wide PC monitors | start from XMB 1080p |
+| **1280x1024** | 5:4 PC monitors | start from XMB 1080p |
+| **1920x1200** | 16:10 PC monitors | start from XMB 1080p |
+
+Each choice opens a 15-second preview inside the app. **X** keeps it for the
+session; **Circle**, or no input, restores the previous output. The helper
+restores stock output by itself even if the app is closed or the PC
+disconnects. It is the exact package tested on the owner's console.
+
+## PC resolutions
+
+- **PROVEN (capture + receiver, in-app):** 1280x768 showed a readable
+  confirmation screen, the receiver reported 1280x768, and the timeout
+  restored 1920x1080. 1024x768 bound and drew the app at 1024x768 with a
+  readable confirmation screen and checked restoration. See
+  [HDMI custom resolutions](https://github.com/Gabarsolon/ps3-240p/blob/v1.6.0-dev4/docs/HDMI_CUSTOM_RESOLUTIONS.md).
+- **PROVEN (earlier XMB-path tests):** 1280x1024 showed XMB with the receiver
+  reporting 1280x1024. 1920x1200 showed XMB with a live receiver report of
+  1920x1200. Both restored stock 1080p. See
+  [PC presets](https://github.com/Gabarsolon/ps3-240p/blob/v1.6.0-dev4/docs/PC_PRESETS_DEVELOPMENT.md)
+  and [XGA](https://github.com/Gabarsolon/ps3-240p/blob/v1.6.0-dev4/docs/XGA_DEVELOPMENT.md).
+- **UNKNOWN:** these four modes were not retested with this exact package,
+  exact refresh is unmeasured (nominal 60 Hz requested), and 1024x768 uses
+  non-standard clock/totals. Game compatibility is untested.
 
 ## How to use 540p
 
@@ -19,7 +43,7 @@ It is the exact package tested on the owner's console.
 
 - **PROVEN (owner, Xiaomi HDMI monitor):** the monitor reported **1920x540
   at 60 Hz** with a full, correct picture. See
-  [540p resolved](HDMI_CUSTOM_RESOLUTIONS.md#540p-resolved-2026-11-15).
+  [540p resolved](https://github.com/Gabarsolon/ps3-240p/blob/main/docs/HDMI_CUSTOM_RESOLUTIONS.md#540p-resolved-2026-11-15).
 - **PROVEN (capture frames, this package):** the in-app preview shows the
   complete menu with correct proportions. Hardware fetch pitch was 0x4000,
   from both a 1080i start and a 1080p start, and stock output was restored.
@@ -36,7 +60,7 @@ It is the exact package tested on the owner's console.
 - **UNKNOWN:** whether some displays reject the stock AVI description (VIC 5)
   for a progressive 1920x540 signal.
 - The 16:9 picture fills each resolution; 4:3 and other aspect handling are
-  planned for a later release. The PC modes were not retested for this build.
+  planned for a later release.
 - Requires CFW 4.93 (Evilnat + Cobra tested), HDMI only. Never install or
   update CRT Toolset while it is running.
 
