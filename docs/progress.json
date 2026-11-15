@@ -1,6 +1,6 @@
 {
   "updated": "2026-11-16",
-  "note": "v1.6.0-dev6: single-SD-family 240p via AV head cache invalidation (shipped, awaiting NTSC/component test); SCART RGB DVD green-fix research added",
+  "note": "v1.6.0-dev6: single-SD-family 240p via AV head cache invalidation (shipped, awaiting NTSC/component test); SCART RGB DVD green-fix research added; stage table re-estimated",
   "workstreams": [
     {
       "name": "240p / 288p and analog gamma",
@@ -67,17 +67,17 @@
     {
       "name": "Encoder & RSX 15 kHz progressive scanline feasibility",
       "weight": 15,
-      "done": 40.0
+      "done": 65
     },
     {
       "name": "Prototype LV1 timing patch / profile override",
       "weight": 10,
-      "done": 35.0
+      "done": 75
     },
     {
       "name": "Native PS3 homebrew application (EBOOT.BIN / PS3-240P.pkg)",
       "weight": 10,
-      "done": 80.0
+      "done": 90
     },
     {
       "name": "Hardware waveform verification (line count, sync, 15.7 kHz)",

@@ -12,9 +12,9 @@ CRT setup. [Current release notes](docs/RELEASE_v1.4.4-rc1.md) and
 <!-- progress:start -->
 ## Progress
 
-![Project progress 79%](docs/progress.svg)
+![Project progress 87%](docs/progress.svg)
 
-**Overall: about 79%** (effort-weighted estimate; the real risk is not evenly spread).
+**Overall: about 87%** (effort-weighted estimate; the real risk is not evenly spread).
 
 | Stage | Weight | Done |
 |---|---:|---|
@@ -22,9 +22,9 @@ CRT setup. [Current release notes](docs/RELEASE_v1.4.4-rc1.md) and
 | AV-manager timing tables & emulator video path trace | 20% | `██████████` 100% |
 | LV1 process loader & memory architecture modeling | 15% | `██████████` 100% |
 | Live LV1 anchor resolution (sysmgr_ss physical segments) | 15% | `██████████` 100% |
-| Encoder & RSX 15 kHz progressive scanline feasibility | 15% | `████░░░░░░` 40.0% |
-| Prototype LV1 timing patch / profile override | 10% | `████░░░░░░` 35.0% |
-| Native PS3 homebrew application (EBOOT.BIN / PS3-240P.pkg) | 10% | `████████░░` 80.0% |
+| Encoder & RSX 15 kHz progressive scanline feasibility | 15% | `██████░░░░` 65% |
+| Prototype LV1 timing patch / profile override | 10% | `████████░░` 75% |
+| Native PS3 homebrew application (EBOOT.BIN / PS3-240P.pkg) | 10% | `█████████░` 90% |
 | Hardware waveform verification (line count, sync, 15.7 kHz) | 5% | `░░░░░░░░░░` 0% |
 
 Current feature status (separate from the weighted research estimate):
@@ -40,7 +40,7 @@ Current feature status (separate from the weighted research estimate):
 | Community compatibility and measurements | CLAIMED: external tester resolves PS1 audio/crop by selecting ps1_netemu; owner reports normal CRT audio. PROVEN: rc1 assets retain their checked digests; the unchanged rc1 build is now the official Latest SD release. UNKNOWN: exact emulator/setup difference, integer scaling and latency. | [PS1 report](docs/PS1_AUDIO_REPORT.md); [rc2 diagnostic](docs/RELEASE_v1.4.4-rc2.md); [tracked requests](docs/DISPLAY_PRESETS_ROADMAP.md#other-community-requests-to-track) |
 | SCART RGB DVD/Blu-ray green picture | PROVEN: green = AV encoder in component mode; two LV1 patches force RGB output and remove the green (XMB unaffected). PROVEN: the encoder has no YCbCr-to-RGB conversion (letterbox bars turn magenta) and RSX scanout byte 9 is colorimetry only, so the conversion must happen in the player. UNKNOWN: the bdp_BDVD patch that makes the player output RGB; reverse engineering in progress. No release. | [SCART RGB DVD investigation](docs/SCART_RGB_DVD.md) |
 
-_Last update: 2026-11-16. v1.6.0-dev6: single-SD-family 240p via AV head cache invalidation (shipped, awaiting NTSC/component test); SCART RGB DVD green-fix research added_
+_Last update: 2026-11-16. v1.6.0-dev6: single-SD-family 240p via AV head cache invalidation (shipped, awaiting NTSC/component test); SCART RGB DVD green-fix research added; stage table re-estimated_
 <!-- progress:end -->
 
 The progress block is generated from `docs/progress.json`; percentages estimate work, not electrical verification.
