@@ -75,6 +75,10 @@ Research project: native 240p/288p analog output on a PS3 (CFW Evilnat 4.93 + Co
   console; XMB reported completion, all four installed files matched the
   package, and the staged PKG remained. Evidence:
   `local_only/display_presets/public-diagnostic-ui/{install-webman.html,installed.json}`.
+  **Never install or update CRT Toolset, or replace its app/helper files,
+  while the app is running.** Confirm normal exit to XMB and absence of
+  `/dev_hdd0/tmp/240p_app.active` before any deployment; an existing resident
+  helper must also be idle with no pending restoration before replacement.
   Load a verified helper only
   into an independently confirmed empty slot; never evict another plugin
   or modify the boot-plugin list for a test.
