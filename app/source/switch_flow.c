@@ -42,11 +42,15 @@ int switch_revert(switch_flow *f)
   * NTSC unit refusing 576i, say) must still recover, so only a failure to
   * reach the original profile is fatal. When the forward flip failed before
   * leaving the original, the display never changed and this confirms it. */
- int a=f->configure(f->user,f->original==4?5:4);(void)a;
  /* Also invalidate the original head's cached index so returning to the
   * original mode reprograms stock timing even when the bounce could not leave
-  * it (the console refused the other SD family). Best-effort. */
- (void)patch_invalidate_head(f->patch,f->original==5?1:0);
+  * it (the console refused the other SD family). Pick the head actually
+  * programmed (region does not fix the family/head map); fall back to the
+  * target-derived default only when detection is ambiguous. Best-effort. */
+ int rhead=patch_active_head(f->patch);
+ if(rhead<0)rhead=f->original==5?1:0;
+ int a=f->configure(f->user,f->original==4?5:4);(void)a;
+ (void)patch_invalidate_head(f->patch,rhead);
  int b=f->configure(f->user,f->original);
  if(b)return fail(f,"RAM restored; display recovery failed. Reboot console");
  f->pending=0;return 0;
@@ -74,11 +78,19 @@ int switch_begin_target(switch_flow *f,int family,unsigned target,unsigned curre
   * configure the other family, so when that leave fails, fall back to
   * invalidating the head's cached profile index: the AV manager then reprograms
   * from the patched table on a repeat of the current mode, with no family
-  * change. head 0 drives 480i, head 1 drives 576i. */
- int head=f->target==5?1:0;
- int rc=f->configure(f->user,f->alternate)
-   ? (patch_apply(f->patch,family)||patch_invalidate_head(f->patch,head)||f->configure(f->user,f->target))
-   : (patch_apply(f->patch,family)||f->configure(f->user,f->target));
+  * change. The head to clear is the one actually programmed in the AV cache, not
+  * a target-derived guess: an NTSC console drives 480i on head 1 (issue #1), so
+  * target==4 does not imply head 0. Fall back to the old map only if ambiguous. */
+ int head=patch_active_head(f->patch);
+ if(head<0)head=f->target==5?1:0;
+ int rc;
+ if(f->configure(f->user,f->alternate)){
+  if(f->patch->log)f->patch->log("Single-SD fallback: invalidate head=%d (target=%u default=%d)",
+   head,f->target,f->target==5?1:0);
+  rc=patch_apply(f->patch,family)||patch_invalidate_head(f->patch,head)||f->configure(f->user,f->target);
+ }else{
+  rc=patch_apply(f->patch,family)||f->configure(f->user,f->target);
+ }
  if(rc){
   char cause[200];snprintf(cause,sizeof(cause),"%s",f->patch->error[0]?f->patch->error:"Video configuration failed; see diagnostic log");
   if(switch_revert(f))return -1;

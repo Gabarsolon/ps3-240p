@@ -295,6 +295,21 @@ int patch_apply(patch_context *c,int family)
 int patch_restore(patch_context *c){return transaction(c,c->stock);}
 int patch_undo(patch_context *c)
 {return c->have_saved?transaction(c,c->saved):fail(c,"No experiment snapshot");}
+/* Return the single analog head currently programmed (AV cache state==2), or
+ * -1 when zero or both heads are active. The SD family alone does not fix the
+ * head: a PAL console drives 576i on head 1, but an NTSC console was observed
+ * driving 480i on head 1 too (GitHub issue #1 log), so the fallback must
+ * invalidate the head that is actually live, not a target-derived default. */
+int patch_active_head(patch_context *c)
+{
+ patch_cached_video cv;
+ if(!c||!c->ready||!c->video_ready)return -1;
+ if(patch_read_cached_video(c,&cv))return -1;
+ int h0=cv.head[0].state==2,h1=cv.head[1].state==2;
+ if(h0&&!h1)return 0;
+ if(h1&&!h0)return 1;
+ return -1;
+}
 int patch_invalidate_head(patch_context *c,int head)
 {
  if(!c||head<0||head>1)return -1;
@@ -306,7 +321,11 @@ int patch_invalidate_head(patch_context *c,int head)
  uint64_t addr=c->video_address[26];
  uint64_t cur=read64(c,addr);
  uint64_t next=cur&(head?UINT64_C(0xffffffff00000000):UINT64_C(0x00000000ffffffff));
- if(next==cur)return 0;
+ if(next==cur){
+  if(c->log)c->log("AV head %d profile-index cache already clear (%016llx)",
+   head,(unsigned long long)cur);
+  return 0;
+ }
  c->write(c->user,addr,next);
  if(read64(c,addr)!=next)return fail(c,"AV head cache invalidation readback failed");
  if(c->log)c->log("AV head %d profile-index cache invalidated (%016llx->%016llx)",

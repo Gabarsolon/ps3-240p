@@ -56,7 +56,7 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, displ
         version = "01.45"
     if display_presets or hdmi_custom:
         helper = ROOT / "build/pid-compat/plugin/vsh_240p.sprx"
-        version = "01.75" if sd_timing_fix else "01.73" if hdmi_custom else "01.71" if xga_presets else "01.70"
+        version = "01.76" if sd_timing_fix else "01.73" if hdmi_custom else "01.71" if xga_presets else "01.70"
         probe = ROOT / ("build/hdmi-custom/plugin/vsh_240p.sprx" if hdmi_custom else "build/xga-probe/plugin/vsh_240p.sprx" if xga_presets else "build/display-probe/plugin/vsh_240p.sprx")
         if not probe.exists():
             raise FileNotFoundError(f"Build the matching preset helper first: {probe}")
@@ -87,7 +87,7 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, displ
     run("cmake", "-S", ROOT / "app", "-B", app_build_dir, "-G", "Ninja",
         f"-DCMAKE_TOOLCHAIN_FILE={toolchain_cmake}",
         f"-DCRT_ENABLE_HD540={'ON' if experimental_hd540 else 'OFF'}",
-        f"-DCRT_APP_VERSION={'1.6.0-dev6' if sd_timing_fix else '1.6.0-dev4' if hdmi_custom else '1.4.4-rc2' if audio_diagnostic else '1.6.0-dev2' if xga_presets else '1.6.0-dev1' if display_presets else '1.4.4-rc1' if pid_compatibility else ''}",
+        f"-DCRT_APP_VERSION={'1.6.0-dev7' if sd_timing_fix else '1.6.0-dev4' if hdmi_custom else '1.4.4-rc2' if audio_diagnostic else '1.6.0-dev2' if xga_presets else '1.6.0-dev1' if display_presets else '1.4.4-rc1' if pid_compatibility else ''}",
         f"-DCRT_ENABLE_PRESETS={'ON' if display_presets else 'OFF'}",
         f"-DCRT_ENABLE_XGA={'ON' if xga_presets else 'OFF'}",
         f"-DCRT_ENABLE_CUSTOM_HDMI={'ON' if hdmi_custom else 'OFF'}")
@@ -149,7 +149,7 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, displ
     if hdmi_custom:
         out_pkg = deliverables_dir / "CRT-Toolset-1.6.0-dev4.pkg"
     if sd_timing_fix:
-        out_pkg = deliverables_dir / "CRT-Toolset-1.6.0-dev6.pkg"
+        out_pkg = deliverables_dir / "CRT-Toolset-1.6.0-dev7.pkg"
 
     run(pkg_tool, "--contentid", CONTENT_ID, f"{staging_dir}/", out_pkg)
     run(finalize_tool, out_pkg)

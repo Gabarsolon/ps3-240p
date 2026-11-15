@@ -18,14 +18,24 @@ full program when zero.
 - AV state object: pointer at `0xc000b440` (TOC `0xc0012f40` − 0x7b00) →
   static instance at `0xc000d4c8` (service segment, memsz `0xdd58`).
 - Per-head profile-index valid flag at `state + 0x228`: head 0 = high word
-  (`0xc000d6f0`), head 1 = low word (`0xc000d6f4`). Head 0 drives 480i analog,
-  head 1 drives 576i.
+  (`0xc000d6f0`), head 1 = low word (`0xc000d6f4`).
 - The app already resolves this word (`lv1_patch.c` `video_address[26]`).
 
-Zeroing the target head's flag forces a full reprogram on the **next request of
-the same mode**, with no family change. Evidence: cross-checked against the
+Zeroing the **active** head's flag forces a full reprogram on the **next request
+of the same mode**, with no family change. Evidence: cross-checked against the
 independently decompiled setter and the existing `VIDEO_CONTEXT_POINTER` /
 `VIDEO_CONTEXT_HOLDER` constants (identical derivation).
+
+### Which head (corrected in dev7)
+
+Region does **not** fix the head/family map. On the owner's PAL console 576i runs
+on head 1; GitHub issue #1 (NTSC console, 480i over component) drives 480i on
+**head 1** too, with head 0 idle (`state=0`). dev6 picked the head from the SD
+target (`target==5 ? 1 : 0`), so for a 480i target it cleared idle head 0 and
+left live head 1 unchanged — the candidate never activated. dev7 reads the head
+that is actually programmed (AV cache `state==2`, `patch_active_head`) and clears
+that one; the target-derived default is a fallback only when 0 or 2 heads are
+active.
 
 ## Implementation
 
@@ -34,10 +44,11 @@ independently decompiled setter and the existing `VIDEO_CONTEXT_POINTER` /
 - `switch_begin_target` (`app/source/switch_flow.c`): keep the proven flip as
   the primary path (no regression on consoles that can configure the other SD
   family); when `configure(alternate)` fails, fall back to
-  `patch_apply` → `patch_invalidate_head(head)` → `configure(target)`.
-- `switch_revert`: invalidate the original head before returning to the original
+  `patch_apply` → `patch_invalidate_head(patch_active_head())` → `configure(target)`.
+- `switch_revert`: invalidate the active head before returning to the original
   mode, so recovery reprograms stock timing even when the other family cannot
   be configured. Only a failure to reach the original mode is fatal.
+- `patch_active_head` (dev7): the single head with AV cache `state==2`, else -1.
 
 Routing by actual configurability (does `configure(alternate)` succeed) rather
 than `cellVideoOutGetResolutionAvailability`, which reports only the region SD
@@ -45,8 +56,12 @@ standard and is unreliable for this decision.
 
 ## Status
 
-- Host tests: 44/44 (`python -B tools/test_app.py`), incl. a fallback case.
-- UNKNOWN until a live NTSC/single-SD console test: whether a repeat of the
+- Host tests: 44/44 (`python -B tools/test_app.py`), incl. a fallback case and
+  an NTSC head-1-active case (dev7).
+- dev6 live result (issue #1, NTSC/component): reverted cleanly but never
+  activated — it cleared idle head 0 while live head 1 kept stock timing.
+  dev7 clears the active head; live verification still pending on that console.
+- UNKNOWN until a live single-SD console test: whether a repeat of the
   current mode reaches `0x800005e4` so the invalidated flag triggers the
   reprogram. If it does not, `begin_picture`'s candidate-active check fails and
   the flow reverts cleanly. Primary (flip) path verified on the owner's PAL

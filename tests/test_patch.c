@@ -221,6 +221,19 @@ int main(void)
  assert(!switch_begin(&f,1,5,1));
  assert(f.pending&&patch_state(&c,1)==STATE_PATCHED);
  assert(get(NULL,c.video_address[26])==UINT64_C(0x0000000500000000)); /* head 1 flag cleared */
+ /* Issue #1: an NTSC console drives 480i on head 1, not head 0. The single-SD
+  * fallback for a 480i target (default head 0) must invalidate the ACTUALLY
+  * programmed head (head 1), or the active timing is never reprogrammed. */
+ setup();f=flow();
+ for(int i=0;i<7;i++)put64(c.video_address[9+i],get(NULL,c.video_address[2+i]));   /* head1 raster = head0 */
+ for(int i=0;i<5;i++)put64(c.video_address[21+i],get(NULL,c.video_address[16+i])); /* head1 request = head0 */
+ put64(c.video_address[26],UINT64_C(0x0000000000000002));                          /* head0 idle, head1 active */
+ assert(patch_active_head(&c)==1);
+ fail_video_call=1; /* configure(alternate) refused: single-SD path */
+ assert(!switch_begin(&f,MODE_240P_NTSC,4,1));
+ assert(f.pending&&patch_state(&c,0)==STATE_PATCHED);
+ assert(get(NULL,c.video_address[26])==0); /* head 1 flag cleared, not head 0 */
+ assert(!switch_revert(&f));is_stock();
  /* A failed return to the target mode stays fatal and reverts to stock. */
  setup();f=flow();fail_video_call=2;assert(switch_begin(&f,1,5,1)==-1&&!f.pending);is_stock();
  setup();f=flow();assert(!switch_begin(&f,1,5,1));fail_video_call=4;
