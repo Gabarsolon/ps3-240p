@@ -6,6 +6,7 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #ifdef APP_HOST_TEST
 #include "app_mock.h"
 #else
@@ -40,6 +41,10 @@
 #ifdef CRT_ENABLE_PRESETS
 #include "../../experiments/display_probe/service.h"
 #endif
+#ifdef CRT_ENABLE_CUSTOM_HDMI
+#include "hdmi_custom_protocol.h"
+#include "../../experiments/hdmi_custom/confirm.h"
+#endif
 #ifndef CRT_BUILD_VERSION
 #ifdef CRT_ENABLE_HD540
 #define CRT_BUILD_VERSION "1.5.0-dev19"
@@ -51,6 +56,12 @@
 SYS_PROCESS_PARAM(1001,0x100000);
 #define HOST_SIZE (32u*1024*1024)
 #define MAX_PIXELS (1920u*1080u)
+#ifdef CRT_ENABLE_CUSTOM_HDMI
+/* Cover the full registered extent even for the 540p doubled-pitch source. */
+#define DISPLAY_BYTES (16384u*1080u)
+#else
+#define DISPLAY_BYTES (MAX_PIXELS*4u)
+#endif
 #define LOG_PATH "/dev_hdd0/tmp/ps3_240p.log"
 #define APP_ACTIVE_FLAG "/dev_hdd0/tmp/240p_app.active"
 #define ENFORCER_FLAG "/dev_hdd0/tmp/240p_enforcer.on"
@@ -84,6 +95,16 @@ static uint64_t redraw_until;
 static unsigned hash_frames;
 static unsigned submitted_frames,completed_frames;
 static uint64_t next_heartbeat;
+#ifdef CRT_ENABLE_CUSTOM_HDMI
+static unsigned custom_app_owner,custom_bound_start,custom_bind_operation;
+static int custom_paused;
+static uint64_t custom_beat_due;
+static hc_video custom_surface;
+static int custom_video_step(void);
+static int custom_video_acknowledge(unsigned,unsigned);
+static int custom_scanout_check(void);
+static int custom_heartbeat(void);
+#endif
 static struct {uint64_t status,param;} events[16];
 static unsigned event_count,event_dropped;
 static int os_active(void){return system_menu||system_drawing;}
@@ -122,6 +143,11 @@ static int pump(void)
    (unsigned long long)s,(unsigned long long)events[i].param,system_menu,system_drawing,exiting);
  }
  event_count=0;if(event_dropped){app_log("Sysutil dropped events=%u",event_dropped);event_dropped=0;}
+#ifdef CRT_ENABLE_CUSTOM_HDMI
+ /* GPU waits keep pumping OS events, including a prolonged PS menu.
+  * Keep the owner lease fresh while that app is still servicing callbacks. */
+ if(custom_app_owner&&now()>=custom_beat_due&&custom_heartbeat())exiting=1;
+#endif
  if(rc){app_log("Callback error=%08x",(unsigned)rc);exiting=1;}
  return !exiting;
 }
@@ -225,8 +251,18 @@ static int read_video(void)
  app_log("Video readback id=%u scan=%u aspect=%u refresh=%u surface=%ux%u port=%02x device_rc=%08x",
   next.displayMode.resolution,next.displayMode.scanMode,next.displayMode.aspect,next.displayMode.refreshRates,
   res.width,res.height,info.portType,(unsigned)info_rc);
- state=next;resolution=res;device=info;pitch=res.width*4u;
+ state=next;device=info;
+#ifdef CRT_ENABLE_CUSTOM_HDMI
+ if(custom_surface.magic==HC_MAGIC&&custom_surface.width){res.width=(uint16_t)custom_surface.width;res.height=(uint16_t)custom_surface.height;}
+ pitch=custom_surface.magic==HC_MAGIC&&custom_surface.width?custom_surface.pitch:((res.width*4u+1023u)&~1023u);
+ unsigned factor=custom_surface.magic==HC_MAGIC&&custom_surface.width?custom_surface.factor:1u;
+ if(!factor||factor>2||pitch<res.width*4u||pitch>8192||(uint64_t)pitch*factor*res.height>DISPLAY_BYTES)return -1;
+ resolution=res;
+ for(int i=0;i<2;i++)if(cellGcmSetDisplayBuffer((uint8_t)i,offsets[i],pitch*factor,res.width,res.height))return -1;
+#else
+ resolution=res;pitch=res.width*4u;
  for(int i=0;i<2;i++)if(cellGcmSetDisplayBuffer((uint8_t)i,offsets[i],pitch,res.width,res.height))return -1;
+#endif
  int eff_h=active_raster_height();
  int is_interlaced=(next.displayMode.scanMode==VIDEO_SCANMODE_INTERLACE);
  if(patch.ready&&(patch_state(&patch,0)==STATE_PATCHED||patch_state(&patch,1)==STATE_PATCHED))is_interlaced=0;
@@ -427,6 +463,9 @@ static int configure(void *u,unsigned id)
  cfg.resolution=(uint8_t)id;cfg.format=VIDEO_BUFFER_FORMAT_XRGB;
  cfg.aspect=state.displayMode.aspect==VIDEO_ASPECT_16_9?VIDEO_ASPECT_16_9:VIDEO_ASPECT_4_3;
  cfg.pitch=res.width*4u;
+#ifdef CRT_ENABLE_CUSTOM_HDMI
+ cfg.pitch=(cfg.pitch+1023u)&~1023u;
+#endif
  /* Nonblocking firmware request; wait for an enabled, matching readback. */
  rc=videoConfigure(0,&cfg,NULL,0);app_log("videoConfigure id=%u result=%08x",id,(unsigned)rc);
  if(rc)return -1;
@@ -448,7 +487,20 @@ static int configure(void *u,unsigned id)
 }
 static int frame(const ui_view *view)
 {
- if(!gpu_ok||!pump()||wait_flip())return -1;
+ if(!gpu_ok||!pump())return -1;
+#ifdef CRT_ENABLE_CUSTOM_HDMI
+ if(custom_video_step())return -1;
+ if(custom_paused){usleep(16000);return 0;}
+#endif
+ if(wait_flip())return -1;
+#ifdef CRT_ENABLE_CUSTOM_HDMI
+ if(custom_bind_operation&&submitted_frames-custom_bound_start>=2){
+  if(custom_scanout_check()){(void)custom_video_acknowledge(HC_VIDEO_BIND,2);return -1;}
+  if(custom_video_acknowledge(HC_VIDEO_BIND,0))return -1;
+  app_log("Custom source bound operation=%u size=%ux%u pitch=%u factor=%u",custom_bind_operation,resolution.width,resolution.height,pitch,custom_surface.factor);
+  custom_bind_operation=0;
+ }
+#endif
  /* Follow the SDK sysmenu sample: freeze the scene but KEEP flipping while
   * the OS draws. Stop application input/edits, not the presentation loop. */
  if(refresh&&!os_active()){
@@ -496,7 +548,12 @@ static int frame(const ui_view *view)
    * magenta band marks the area a cropped 240-line raster would hide. */
   if(ui_render_pattern(&canvas,resolution.width,resolution.height,eff_h<64?64:eff_h))return -1;
  } else if((!os_active()||!submitted_frames)&&ui_render(&layout,view,&canvas,&drawn))return -1;
+#ifdef CRT_ENABLE_CUSTOM_HDMI
+ for(unsigned y=0;y<resolution.height;y++)memcpy((unsigned char *)buffers[front]+(size_t)y*pitch,
+  software+(size_t)y*resolution.width,(size_t)resolution.width*4u);
+#else
  memcpy(buffers[front],software,(size_t)pitch*resolution.height);
+#endif
  if(submitted_frames<2){
   unsigned ink=0,first=0;
   for(unsigned i=0;i<(unsigned)resolution.width*resolution.height;i++)if(software[i]!=UI_BACKGROUND){if(!ink)first=i;ink++;}
@@ -892,6 +949,196 @@ static void pc_menu(void)
  }
 }
 #endif
+#ifdef CRT_ENABLE_CUSTOM_HDMI
+#define CUSTOM_HELPER "/dev_hdd0/game/PS240P001/USRDIR/" HC_MODULE ".sprx"
+static int custom_write(const char *path,const void *data,size_t size)
+{
+ char stage[320];if(snprintf(stage,sizeof(stage),"%s.appstage",path)<0)return -1;
+ FILE *f=fopen(stage,"wb");if(!f)return -1;
+ int bad=fwrite(data,1,size,f)!=size;if(fflush(f))bad=1;if(fclose(f))bad=1;if(bad)return -1;
+ if(remove(path)&&errno!=ENOENT)return -1;return rename(stage,path);
+}
+static int custom_read(const char *path,void *data,size_t size)
+{
+ FILE *f=fopen(path,"rb");if(!f)return -1;size_t n=fread(data,1,size,f);int extra=fgetc(f),bad=ferror(f);fclose(f);
+ return bad||n!=size||extra!=EOF?-1:0;
+}
+static int custom_heartbeat(void)
+{
+ if(!custom_app_owner)return 0;
+ hc_app context={HC_MAGIC,custom_app_owner,(unsigned)sysProcessGetPid(),0,now()};
+ if(custom_write(HC_APP,&context,sizeof(context)))return -1;
+ custom_beat_due=now()+250000;return 0;
+}
+static int custom_video_acknowledge(unsigned phase,unsigned error)
+{
+ hc_video_ack ack={HC_MAGIC,custom_app_owner,custom_surface.operation,phase,error};
+ return custom_write(HC_VIDEO_ACK,&ack,sizeof(ack));
+}
+static int custom_scanout_check(void)
+{
+ const gcmDisplayInfo *info=gcmGetDisplayInfo();if(!info)return -1;
+ unsigned factor=custom_surface.factor;if(!factor)return -1;
+ for(unsigned i=0;i<2;i++){
+  app_log("Custom GCM buffer=%u offset=%08x pitch=%u size=%ux%u",i,info[i].offset,info[i].pitch,info[i].width,info[i].height);
+  if(info[i].offset!=offsets[i]||info[i].pitch!=pitch*factor||info[i].width!=resolution.width||info[i].height!=resolution.height)return -1;
+ }
+ return 0;
+}
+static int custom_video_step(void)
+{
+ if(!custom_app_owner)return 0;
+ if(now()>=custom_beat_due&&custom_heartbeat())return -1;
+ hc_video q;if(custom_read(HC_VIDEO,&q,sizeof(q))||q.magic!=HC_MAGIC||q.owner!=custom_app_owner)return 0;
+ if(q.phase==HC_VIDEO_QUIESCE){
+  if(custom_surface.operation==q.operation&&custom_paused)return 0;
+  if(wait_flip()||drain())return -1;
+  custom_surface=q;custom_paused=1;custom_bind_operation=0;
+  app_log("Custom source quiesced operation=%u native_mode=%u",q.operation,q.mode);
+  return custom_video_acknowledge(HC_VIDEO_QUIESCE,0);
+ }
+ if(q.phase==HC_VIDEO_BIND){
+  if(custom_surface.operation==q.operation&&!custom_paused)return 0;
+  if(q.width<640||q.width>1920||q.height<480||q.height>1080||q.pitch<q.width*4u||q.pitch>8192||
+     !q.factor||q.factor>2||(uint64_t)q.pitch*q.factor*q.height>DISPLAY_BYTES||
+     (q.factor==2&&(q.width!=1920||q.height!=1080||q.pitch!=8192)))return -1;
+  custom_surface=q;
+  if(read_video()){(void)custom_video_acknowledge(HC_VIDEO_BIND,1);return -1;}
+  custom_paused=0;pending=0;front=0;presented_hash=0;hash_frames=0;redraw_until=now()+1000000;
+  cellGcmResetFlipStatus();custom_bind_operation=q.operation;custom_bound_start=submitted_frames;
+  app_log("Custom source rebinding operation=%u width=%u height=%u pitch=%u factor=%u",q.operation,q.width,q.height,q.pitch,q.factor);
+ }
+ return 0;
+}
+static int custom_reply(hc_reply *r)
+{
+ FILE *f=fopen(HC_REPLY,"rb");if(!f)return -1;
+ unsigned char bytes[sizeof(*r)+1];size_t n=fread(bytes,1,sizeof(bytes),f);int bad=ferror(f);fclose(f);
+ if(bad||n!=sizeof(*r))return -1;memcpy(r,bytes,sizeof(*r));
+ return r->magic==HC_MAGIC&&r->state<=HC_FAILED&&r->mode<=HC_MODE_COUNT?0:-1;
+}
+static int custom_resident(void)
+{
+ for(unsigned slot=1;slot<=6;slot++){
+  char name[96]={0},path[256]={0};int rc=helper_info(0,slot,name,path);
+  if((uint32_t)rc==0x80010006u)continue;if(rc)return -1;
+  if(!strcmp(name,HC_MODULE))return 1;
+ }
+ return 0;
+}
+/* Called before GCM/display setup: let the resident owner restore its hooks
+ * and XMB surface before this app allocates or reconfigures a framebuffer. */
+static int custom_startup_wait(void)
+{
+ int resident=custom_resident();if(resident<=0)return resident;
+ uint64_t deadline=now()+25000000;
+ while(now()<deadline){
+  hc_reply r;if(!custom_reply(&r)){
+   if(r.state==HC_FAILED)return -1;
+   if(r.state==HC_IDLE||r.state==HC_DONE||r.state==HC_REFUSED||r.state==HC_SUSPENDED||r.state==HC_WAIT_APP)return 0;
+  }
+  usleep(50000);
+ }
+ return -1;
+}
+static int custom_helper(void)
+{
+ int source_size=0;uint64_t source=file_digest(CUSTOM_HELPER,&source_size);if(source_size<=0)return -1;
+ unsigned resident=0,empty=0;char resident_path[256]={0};
+ for(unsigned slot=1;slot<=6;slot++){
+  char name[96]={0},path[256]={0};int rc=helper_info(0,slot,name,path);
+  if((uint32_t)rc==0x80010006u){if(!empty)empty=slot;continue;}if(rc)return -1;
+  if(!strcmp(name,HC_MODULE)){if(resident)return -1;resident=slot;snprintf(resident_path,sizeof(resident_path),"%s",path);}
+  else if(!strcmp(name,"vsh_240p")||!strcmp(name,"crt_xga_probe")||!strcmp(name,"crt_display_probe"))return -1;
+  else if(!name[0]&&!path[0]&&!empty)empty=slot;
+ }
+ if(resident){int size=0;uint64_t hash=file_digest(resident_path,&size);if(deploy_needed(source_size,source,size,hash))return -1;}
+ else{
+  if(!empty)return -1;clear_flag(HC_READY);if(load_vsh_plugin(empty,CUSTOM_HELPER))return -1;
+  char name[96]={0},path[256]={0};
+  if(helper_info(0,empty,name,path)||strcmp(name,HC_MODULE)||strcmp(path,CUSTOM_HELPER))return -1;
+ }
+ uint64_t deadline=now()+5000000;while(!flag_present(HC_READY)&&now()<deadline&&!exiting){pump();usleep(50000);}
+ return flag_present(HC_READY)?0:-1;
+}
+static int custom_publish(unsigned action,unsigned mode,unsigned *sent)
+{
+ hc_reply reply;int have=!custom_reply(&reply);FILE *f=fopen(HC_REQUEST,"rb");
+ if(f){hc_request old;size_t n=fread(&old,1,sizeof(old),f);int extra=fgetc(f);int bad=ferror(f);fclose(f);
+  if(bad||n!=sizeof(old)||extra!=EOF||!have||old.magic!=HC_MAGIC||old.sequence!=reply.sequence)return -1;
+ }
+ static unsigned sequence;if(!sequence)sequence=(unsigned)now();if(!++sequence)++sequence;
+ if(action==HC_APP_SELECT){custom_app_owner=sequence;custom_beat_due=0;if(custom_heartbeat())return -1;}
+ gamma_request request={HC_MAGIC,sequence,action,mode};int error=0;
+ if(gamma_publish(HC_REQUEST,&request,&error))return -1;*sent=sequence;return 0;
+}
+static void custom_run(unsigned mode)
+{
+ if(custom_helper()){status("HDMI helper unavailable","The matching helper needs a free slot. Exit and reboot to clear an older display helper; no plugin was replaced.");return;}
+ hc_reply reply;int have=!custom_reply(&reply);
+ if(mode&&have&&reply.state==HC_KEPT){custom_run(0);if(!custom_reply(&reply)&&reply.state!=HC_DONE)return;have=!custom_reply(&reply);}
+ if(mode&&(read_video()||device.portType!=1||state.displayMode.resolution!=1||
+   (state.displayMode.scanMode==VIDEO_SCANMODE_INTERLACE&&mode!=HC_540)||flag_present(ENFORCER_FLAG))){
+  status("HDMI mode unavailable",mode==HC_540?"Start at stock HDMI 1080i (recommended for HD CRTs) or 1080p. Pause SD enforcement and clear old timing edits first.":"Start at stock HDMI 1080p. Pause SD enforcement and clear old timing edits before selecting a custom mode.");return;
+ }
+ if(have&&reply.state!=HC_IDLE&&reply.state!=HC_DONE&&reply.state!=HC_REFUSED&&reply.state!=HC_SUSPENDED&&reply.state!=HC_WAIT_APP&&!(mode==0&&reply.state==HC_KEPT)){
+  status("HDMI recovery pending","Wait for the previous mode to restore before selecting another.");return;
+ }
+ unsigned sequence;if(custom_publish(mode?HC_APP_SELECT:HC_STOP,mode,&sequence)){
+  status("HDMI inbox busy","The previous command is not acknowledged. No command was replaced.");return;
+ }
+ app_log("Custom HDMI queued in-app mode=%u action=%u sequence=%u",mode,mode?HC_APP_SELECT:HC_STOP,sequence);
+ uint64_t deadline=now()+180000000;hc_confirm confirm={0};int pending_choice=0;
+ unsigned previous_state=UINT32_MAX;
+ while(now()<deadline&&!exiting){
+  char text[300];const char *title="Switching HDMI resolution";
+  snprintf(text,sizeof(text),"Checking the display and preparing the selected mode.\n\nStay in the app. The confirmation timer starts after the new picture is drawn.\n\nCircle: cancel and restore.");
+  if(!custom_reply(&reply)&&reply.sequence==sequence){
+   if(previous_state!=reply.state){app_log("Custom HDMI app state=%u detail=%u mode=%u",reply.state,reply.detail,reply.mode);previous_state=reply.state;}
+   if(reply.state==HC_KEPT){app_log("Custom HDMI kept inside app");return;}
+   if(reply.state==HC_DONE||reply.state==HC_REFUSED){
+    custom_app_owner=0;clear_flag(HC_APP);
+    memset(&custom_surface,0,sizeof(custom_surface));custom_paused=0;custom_bind_operation=0;
+    if(reply.state==HC_REFUSED)status("HDMI mode refused","The helper restored or refused the mode. See the HDMI log for details.");return;
+   }
+   if(reply.state==HC_FAILED){status("HDMI recovery unconfirmed","No further mode changes will be attempted. Leave the console for diagnosis.");return;}
+   if(reply.state==HC_PREVIEW){title="Keep this resolution?";
+    snprintf(text,sizeof(text),"Check the full picture and menu.\n\nX: keep this resolution\nCircle: restore the previous output\n\nAutomatic restoration in %u seconds.\n\nAfter confirming, exit to XMB whenever you want.",reply.remaining);
+   }else if(reply.state==HC_RESTORING){title="Restoring previous output";snprintf(text,sizeof(text),"Restoring the previous picture. Please wait.");}
+   if(pending_choice){unsigned next;
+    if(!custom_publish(pending_choice==1?HC_KEEP:HC_STOP,pending_choice==1?reply.sequence:0,&next)){
+     sequence=next;pending_choice=0;memset(&confirm,0,sizeof(confirm));
+    }
+   }
+  }
+  ui_view view={0};view.title=title;view.text=text;view.page=-1;
+  if(frame(&view))break;
+  unsigned key=input(),buttons=0;for(unsigned i=0;i<7;i++)buttons|=held[i];
+  if(!os_active()&&!custom_reply(&reply)&&reply.sequence==sequence){
+   if(reply.state==HC_PREVIEW&&!pending_choice){
+    int choice=hc_confirm_sample(&confirm,(buttons&CROSS?0x4000u:0)|(buttons&CIRCLE?0x2000u:0));
+    if(choice)pending_choice=choice;
+   }else if((key&CIRCLE)&&reply.state!=HC_RESTORING)pending_choice=2;
+  }
+ }
+ status("HDMI transition stopped","The app did not receive a complete mode transition. The helper owns automatic restoration; see its log.");
+}
+static void custom_menu(void)
+{
+ const char *items[]={"540p / 16:9","1024x768 / 16:9","1280x768 / 16:9","1280x1024 / 16:9","1920x1200 / 16:9","Restore stock output / stop","Pause SD enforcement","Back"};
+ const unsigned modes[]={HC_540,HC_XGA,HC_WXGA,HC_SXGA,HC_WUXGA};int selected=0;
+ while(!exiting){
+  ui_view view={0};view.title="HDMI custom resolutions\n15-second preview / X: keep / O: restore";
+  view.items=items;view.count=8;view.selected=selected;view.page=-1;
+  if(frame(&view))break;unsigned key=input();if(key&CIRCLE)break;
+  if(key&UP)selected=(selected+7)%8;if(key&DOWN)selected=(selected+1)%8;
+  if(key&CROSS){if(selected==7)break;
+   if(selected==6){clear_flag(ENFORCER_FLAG);status("SD enforcement paused","Existing timing edits need a reboot to clear. Select HDMI 1080p before a custom resolution.");}
+   else if(selected==5)custom_run(0);else custom_run(modes[selected]);
+  }
+ }
+}
+#endif
 static void diagnostics(void)
 {
  char text[1000];
@@ -1021,12 +1268,17 @@ int main(void)
  if(sysLv2FsOpen(LOG_PATH,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&log_fd,0666,NULL,0))log_fd=-1;
  write_flag(APP_ACTIVE_FLAG);
  app_log("CRT Toolset build " CRT_BUILD_VERSION "; native enabled=%u preparing=%u; timing tests ENABLED",CELL_VIDEO_OUT_OUTPUT_STATE_ENABLED,CELL_VIDEO_OUT_OUTPUT_STATE_PREPARING);
+#ifdef CRT_ENABLE_CUSTOM_HDMI
+ if(custom_startup_wait()){
+  app_log("Custom HDMI recovery unconfirmed; refusing GCM/display startup");clear_flag(APP_ACTIVE_FLAG);sysProcessExit(1);return 1;
+ }
+#endif
  void *host=memalign(1024*1024,HOST_SIZE);
  if(!host){app_log("Startup failed: host allocation");return 1;}
  int rc=cellSysutilRegisterCallback(0,event,NULL);if(rc){app_log("Startup callback rc=%08x",(unsigned)rc);return 1;}
  rc=cellGcmInit(0x100000,HOST_SIZE,host);if(rc){app_log("Startup GCM rc=%08x",(unsigned)rc);return 1;}
  for(int i=0;i<2;i++){
-  buffers[i]=rsxMemalign(64,MAX_PIXELS*4u);
+  buffers[i]=rsxMemalign(64,DISPLAY_BYTES);
   if(!buffers[i]||cellGcmAddressToOffset(buffers[i],&offsets[i])){app_log("Startup display allocation failed index=%d",i);return 1;}
   app_log("Display allocation %d address=%p offset=%08x",i,(void *)buffers[i],offsets[i]);
  }
@@ -1066,6 +1318,9 @@ int main(void)
 #ifdef CRT_ENABLE_PRESETS
   "HDMI PC resolution presets",
 #endif
+#ifdef CRT_ENABLE_CUSTOM_HDMI
+  "HDMI custom resolutions",
+#endif
   "Exit to XMB"
  };
  const int item_count=(int)(sizeof(items)/sizeof(items[0]));
@@ -1101,6 +1356,14 @@ int main(void)
     status("HD recovery pending","Wait for confirmed stock recovery or reboot before another timing/gamma change.");continue;
    }
 #endif
+#ifdef CRT_ENABLE_CUSTOM_HDMI
+   if(selected<=5&&custom_resident()>0){
+    hc_reply hdmi;
+    if(custom_reply(&hdmi)||(hdmi.state!=HC_IDLE&&hdmi.state!=HC_DONE&&hdmi.state!=HC_REFUSED)){
+     status("HDMI mode still active","Use HDMI custom resolutions > Restore stock output before selecting an SD mode.");continue;
+    }
+   }
+#endif
    if(selected==0)test_mode(MODE_240P_NTSC);
    else if(selected==1)enable_mode(4);
    else if(selected==2)test_mode(MODE_288P_PAL);
@@ -1117,6 +1380,9 @@ int main(void)
 #ifdef CRT_ENABLE_PRESETS
    else if(selected==10)pc_menu();
 #endif
+#ifdef CRT_ENABLE_CUSTOM_HDMI
+   else if(selected==10)custom_menu();
+#endif
    else break;
    next_memory_poll=0;
   }
@@ -1127,6 +1393,9 @@ int main(void)
 #endif
  app_log("Exit; pending_recovery=%d",flow.pending);
  clear_flag(APP_ACTIVE_FLAG);
+#ifdef CRT_ENABLE_CUSTOM_HDMI
+ clear_flag(HC_APP);
+#endif
  app_log("Exit: active flag cleared");
  (void)ioPadEnd();app_log("Exit: pad closed");
  (void)cellSysutilUnregisterCallback(0);app_log("Exit: callbacks removed; process termination next");

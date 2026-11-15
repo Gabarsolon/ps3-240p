@@ -36,7 +36,16 @@ Research project: native 240p/288p analog output on a PS3 (CFW Evilnat 4.93 + Co
   alone do not prove a running helper. The installed SD PID build and the
   separate HD build have different capabilities; never infer compatibility
   from a shared plugin filename.
-- Use the owner's OBS capture-card scene through **OBS Virtual Camera**;
+- **Owner instruction (2026-11-15) supersedes the OBS text below:** do not
+  use OBS. Capture the card directly with FFmpeg DirectShow
+  `video=USB3 Video`, MJPEG 1920x1080 at 60 fps (`tools/hd540_auto_test.py`
+  `Capture`). OBS must be closed; only one process can open the card.
+  UNKNOWN cause (2026-11-15): the dev19 stock-720p AVI-zero control
+  sometimes shows no picture (black) while the stock roundtrip passes. One
+  physical replug restored it once; later replugs, a Windows USB
+  disable/enable and YUY2 vs MJPEG capture did not. Run the dev19 720p
+  control first. A failed control makes 540p results invalid.
+- (Historical) Use the owner's OBS capture-card scene through **OBS Virtual Camera**;
   the established input is 2560x1440 at 60 fps, NV12. For picture tests record
   with FFmpeg `-an` (no audio), and keep OBS open. Separate audio diagnostics
   should use console/capture-card audio only, never a microphone or ambient
@@ -105,6 +114,17 @@ Research project: native 240p/288p analog output on a PS3 (CFW Evilnat 4.93 + Co
   frame, not readability, correct scaling, scan cadence or reduced latency.
   Inspect real saved frames; do not substitute generated previews. XMB
   success does not establish app/game compatibility.
+- **PROVEN (custom-menu implementation):** the separate `--hdmi-custom`
+  edition uses module `crt_hdmi_custom`, magic `0x48434d32` and `.v2.ready`.
+  Its requested user flow stays inside the app for preview and confirmation;
+  exiting to XMB is manual. Test the real menu, its app/GPU handshake and
+  subsequent XMB enforcement separately. Confirm a newly rendered startup
+  log and inspect the saved menu frame before controller navigation; an old
+  `UI ready` log is insufficient. For automated keep tests, consume an exact
+  mode/short-expiry `.test_lease` before `HC_APP_SELECT`; it uses `HC_TRIAL`
+  and restores 120 seconds after confirmation even if the PC disconnects.
+  Normal confirmed selections have no such test expiry. See
+  `docs/HDMI_CUSTOM_RESOLUTIONS.md` and `tools/test_hdmi_custom.py`.
 - webMAN virtual pad input and normal soft reboot are authorized. Use
   `/pad.ps3?release` after presses and `/reboot.ps3?soft` when needed. Restore
   owned RAM hooks before a VSH-only restart: it need not reset LV1 state.

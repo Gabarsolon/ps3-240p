@@ -16,6 +16,7 @@ typedef struct {
  uint64_t deadline,retry;
 } hd540_service;
 int hd540_service_busy(const hd540_service *);
+int hd540_service_keep(hd540_service *);
 /* Unknown/duplicate requests cannot extend a test or acknowledge success. */
 int hd540_service_tick(hd540_service *,const hd540_ops *,uint64_t,
                        const hd540_request *,hd540_reply *);

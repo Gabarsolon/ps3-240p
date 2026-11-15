@@ -59,7 +59,7 @@ int hd540_cache_snapshot(hd540_cache *h,uint32_t out[HD540_CACHE_SAMPLES])
 {
  if(!h||!h->ready||current(h))return -1;
  if(!h->attached||rd(h,0)!=WRAPPER_VA)return -1;
-#ifdef CRT_XGA_PROBE
+#if defined(CRT_XGA_PROBE) && !defined(CRT_DIAG_HD_WRAPPER)
  if(rd(h,HD540_CACHE_TRACE+HD540_CACHE_TRACE_WORDS)!=(h->normalize_source?UINT64_C(0x5847413900001000):0))
   return fail(h,"Native source control ownership changed");
 #endif
@@ -122,7 +122,7 @@ int hd540_cache_apply(hd540_cache *h)
   wr(h,6+i,hd540_cache_words[i]);
   if(rd(h,6+i)!=hd540_cache_words[i]){(void)hd540_cache_restore(h);return fail(h,"Native wrapper staging failed");}
  }
-#ifdef CRT_XGA_PROBE
+#if defined(CRT_XGA_PROBE) && !defined(CRT_DIAG_HD_WRAPPER)
  if(h->normalize_source){
   unsigned control=HD540_CACHE_TRACE+HD540_CACHE_TRACE_WORDS;
   wr(h,control,UINT64_C(0x5847413900001000));

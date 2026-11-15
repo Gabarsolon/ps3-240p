@@ -10,6 +10,7 @@ import ftplib
 import hashlib
 import html
 import io
+import os
 import json
 from pathlib import Path
 import re
@@ -79,8 +80,13 @@ class Capture:
         self.process = subprocess.Popen([
             shutil.which("ffmpeg") or "ffmpeg", "-hide_banner", "-nostdin",
             "-loglevel", "warning", "-f", "dshow", "-rtbufsize", "128M",
-            "-video_size", "2560x1440", "-framerate", "60", "-pixel_format", "nv12",
-            "-i", "video=OBS Virtual Camera", "-an", "-vf", "fps=4,scale=640:360",
+            # Default: OBS Virtual Camera. CRT_CAPTURE=card opens the card
+            # directly (MJPEG 1080p60); OBS must then be closed.
+            *(["-vcodec", "mjpeg", "-video_size", "1920x1080", "-framerate", "60",
+               "-i", "video=USB3 Video"] if os.environ.get("CRT_CAPTURE") == "card" else
+              ["-video_size", "2560x1440", "-framerate", "60", "-pixel_format", "nv12",
+               "-i", "video=OBS Virtual Camera"]),
+            "-an", "-vf", "fps=4,scale=640:360",
             "-q:v", "4", "-update", "1", "-atomic_writing", "1", "-y", str(self.latest)
         ], stdout=subprocess.DEVNULL, stderr=self.log,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))

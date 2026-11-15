@@ -136,6 +136,10 @@ int main(void)
  tick(s.deadline,NULL);assert(s.halted&&s.state==HD540_RECOVERY_FAILED);
  reset();q=request(1,HD540_ROUNDTRIP);q.magic=0;tick(1,&q);assert(!prepares);
  q.magic=HD540_MAGIC;q.value=999;tick(2,&q);assert(s.state==HD540_REFUSED&&!prepares);
- puts("PASS: XMB exit/fresh-snapshot gates, fresh callback deadlines, stock-only round trip, exact 15-second candidate hold, RAM-first stock recovery cycle, timed-out alternate still returns, RAM-only retry and bounded/latched video recovery");
+ reset();active();assert(!hd540_service_keep(&s)&&s.state==HD540_HELD&&hd540_service_busy(&s));tick(90000000,NULL);assert(s.state==HD540_HELD&&patched==1);
+ q=request(2,HD540_CANCEL);tick(90000001,&q);assert(s.state==HD540_RESTORE_LEAVING&&!patched);
+ tick(90000002,NULL);tick(90000003,NULL);assert(s.state==HD540_DONE&&!hd540_service_busy(&s));
+ assert(hd540_service_keep(&s)==-1);
+ puts("PASS: XMB exit/fresh-snapshot gates, fresh callback deadlines, stock-only round trip, exact 15-second preview/confirmed keep, RAM-first stock recovery and bounded/latched recovery");
  return 0;
 }

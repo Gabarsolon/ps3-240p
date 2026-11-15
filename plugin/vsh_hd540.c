@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: MIT. No direct MMIO/encoder/clock/persistent writes. */
 #include "vsh_hd540.h"
 #include "vsh_video.h"
+#ifdef CRT_CUSTOM_HDMI
+#include "../experiments/hdmi_custom/video.h"
+#endif
 #include "../app/source/hd540_patch.h"
 #include "../app/source/hd540_hdmi.h"
 #include "../app/source/hd540_scale.h"
@@ -104,9 +107,22 @@ static int prepare(void *u)
  baseline=s;have_observed=0;observed(&s);note("hd_saved_mode",baseline.mode);note("hd_alt_flags",alternate_flags);note("hd_alt_mode",alternate_mode);return 0;
 }
 static int alternate(void *u)
-{(void)u;return vsh_video_hd_submit(&baseline,alternate_flags,alternate_mode);}
+{
+ (void)u;
+#ifdef CRT_CUSTOM_HDMI
+ /* Display setup 0x800005e4 calls pitch writer 0x8000369c only when the
+  * pitch changes (docs/HD540_DEV18.md). XMB rebuilds 720p at 5120 itself;
+  * an app owner keeps its pitch, so request 5120 explicitly. Then the
+  * return to 1080i at 8192 reaches the doubled writer, as at XMB. */
+ if(hc_video_app_alive())return vsh_video_hd_submit_pitch(alternate_flags,alternate_mode,baseline.format,1280u*4u);
+#endif
+ return vsh_video_hd_submit(&baseline,alternate_flags,alternate_mode);
+}
 static int at_alternate(void *u)
 {
+#ifdef CRT_CUSTOM_HDMI
+ int video_ready=hc_video_ready();if(video_ready!=1)return video_ready;
+#endif
  (void)u;vsh_video_state s;
  if(vsh_video_query(&s))return -1;
  observed(&s);
@@ -127,7 +143,13 @@ static int apply(void *u,unsigned kind)
  (void)u;
  if(kind!=HD540_TEST&&kind!=HD540_HDMI_CONTROL&&kind!=HD540_HDMI_720_CONTROL)return fail("Unknown HD patch kind");
  if(flag("/dev_hdd0/tmp/240p_enforcer.on"))return fail("SD enforcement was armed during the HD test");
- int rc=hd540_hdmi_apply(&hdmi);note("hd_avi_apply",(unsigned)rc);
+ int rc;
+#ifdef CRT_CUSTOM_HDMI
+ /* 2026-11-15: forcing AVI VIC 0 made a Xiaomi monitor (and dev19's 720p
+  * control) lose lock; stock AVI kept, monitor locked 1920x540@60. */
+ if(kind==HD540_TEST){rc=0;note("hd_avi_skipped",1);}else
+#endif
+ rc=hd540_hdmi_apply(&hdmi);note("hd_avi_apply",(unsigned)rc);
  if(rc)return fail(hdmi.error);
  if(kind==HD540_HDMI_CONTROL||kind==HD540_HDMI_720_CONTROL)return 0;
  cleanup_since=0;
@@ -141,6 +163,9 @@ static int original(void *u)
 {(void)u;return vsh_video_hd_submit(&baseline,baseline.flags,baseline.mode);}
 static int at_original(void *u,int candidate)
 {
+#ifdef CRT_CUSTOM_HDMI
+ int video_ready=hc_video_ready();if(video_ready!=1)return video_ready;
+#endif
  (void)u;
  if(candidate==3){
   if(hd540_scale_check(&scale,0)!=1)return -1;
@@ -171,24 +196,52 @@ static int at_original(void *u,int candidate)
   note("hd_live_source_pitch",source_pitch);
  }
  if(candidate==1){
-  uint32_t values[10];int traced=hd540_cache_snapshot(&cache,values);
+  uint32_t values[HD540_CACHE_SAMPLES];int traced=hd540_cache_snapshot(&cache,values);
   if(traced!=1)return traced;
   note("hd_cache_calls",values[0]);note("hd_fp_control",values[2]);note("hd_fp_scaler",values[3]);
-  note("hd_fp_vstart",values[4]);note("hd_fp_vend",values[5]);
+  unsigned vstart_index=4,vend_index=5,pitch_index=8,height_index=9;
+#if defined(CRT_CUSTOM_HDMI) && !defined(CRT_DIAG_HD_WRAPPER)
+  /* XGA wrapper layout: 0x814/0x818 are samples 8/9; 4/5 hold 0x834/0x838. */
+  vstart_index=8;vend_index=9;pitch_index=22;height_index=23;
+  note("hd_fp_h_start",values[4]);note("hd_fp_h_end",values[5]);
+  note("hd_fp_898",values[10]);note("hd_fp_200",values[11]);
+#endif
+  note("hd_fp_vstart",values[vstart_index]);note("hd_fp_vend",values[vend_index]);
   note("hd_fp_ystep",values[7]);
-  note("hd_source_pitch",values[8]);note("hd_source_height",values[9]);
+  note("hd_source_pitch",values[pitch_index]);note("hd_source_height",values[height_index]);
   if(!values[0])return 0;
-  if((values[8]&0xfff8u)!=source_pitch*2u)return 0;
+#ifdef CRT_CUSTOM_HDMI
+  if(hc_video_app_alive()){
+   /* Callback telemetry predates the app's GCM rebind. Its ACK follows
+    * checked display-info readback and two completed app flips. */
+   if(!hc_video_scanout_matches(1920,1080,source_pitch))return 0;
+   note("hd_app_bound_pitch",source_pitch);
+  }
+#endif
+  if((values[pitch_index]&0xfff8u)!=source_pitch*2u)return 0;
  }
  int vic=hd540_hdmi_vic(&hdmi);note("hd_avi_vic",(unsigned)vic);
  if(vic==-1)return -1;
- if(vic!=(candidate?0:5))return 0;
+ unsigned want_vic=candidate?0u:5u;
+#ifdef CRT_CUSTOM_HDMI
+ if(candidate==1)want_vic=5u;
+#endif
+ if((unsigned)vic!=want_vic)return 0;
  if(!candidate&&cache.dirty){
-  uint32_t values[10];int traced=hd540_cache_snapshot(&cache,values);
+  uint32_t values[HD540_CACHE_SAMPLES];int traced=hd540_cache_snapshot(&cache,values);
   if(traced!=1)return traced;
   note("hd_stock_ystep",values[7]);
-  note("hd_stock_pitch",values[8]);
-  if((values[8]&0xfff8u)!=source_pitch)return 0;
+  unsigned pitch_index=8;
+#if defined(CRT_CUSTOM_HDMI) && !defined(CRT_DIAG_HD_WRAPPER)
+  pitch_index=22;
+#endif
+  note("hd_stock_pitch",values[pitch_index]);
+#ifdef CRT_CUSTOM_HDMI
+  if(hc_video_app_alive()){
+   if(!hc_video_scanout_matches(1920,1080,source_pitch))return 0;
+  }
+#endif
+  if((values[pitch_index]&0xfff8u)!=source_pitch)return 0;
   uint64_t now=monotonic(NULL);
   if(!cleanup_since){cleanup_since=now;return 0;}
   if(now-cleanup_since<1000000)return 0;
@@ -203,7 +256,11 @@ static int restore(void *u)
 static int ready(void *u)
 {
  (void)u;
- if(flag("/dev_hdd0/tmp/240p_app.active")){stable_since=0;return 0;}
+ if(flag("/dev_hdd0/tmp/240p_app.active")
+#ifdef CRT_CUSTOM_HDMI
+    &&!hc_video_app_alive()
+#endif
+   ){stable_since=0;return 0;}
  vsh_video_state s;if(vsh_video_query(&s)||s.state!=0){stable_since=0;return 0;}
  uint64_t now=monotonic(NULL);
  if(!stable_since||memcmp(&s,&stable_state,sizeof(s))){stable_state=s;stable_since=now;return 0;}

@@ -2,10 +2,18 @@
 #include "hd540_service.h"
 #define TRANSITION_US UINT64_C(5000000)
 #define TEST_US ((uint64_t)HD540_TEST_SECONDS*UINT64_C(1000000))
+/* The custom edition keeps stock AVI, so the AVI-zero control is no prerequisite. */
+#ifdef CRT_CUSTOM_HDMI
+#define HD540_TEST_NEEDS_AVI_CONTROL 0
+#else
+#define HD540_TEST_NEEDS_AVI_CONTROL 1
+#endif
 static uint64_t clock_after(const hd540_ops *o,uint64_t now)
 {uint64_t t=o->clock?o->clock(o->user):now;return t>now?t:now;}
 int hd540_service_busy(const hd540_service *s)
-{return s->recovering||s->state==HD540_WAIT_APP_EXIT||s->state==HD540_LEAVING||s->state==HD540_ENTERING||s->state==HD540_ACTIVE;}
+{return s->recovering||s->state==HD540_WAIT_APP_EXIT||s->state==HD540_LEAVING||s->state==HD540_ENTERING||s->state==HD540_ACTIVE||s->state==HD540_HELD;}
+int hd540_service_keep(hd540_service *s)
+{if(s->state!=HD540_ACTIVE||s->kind!=HD540_TEST)return -1;s->state=HD540_HELD;s->deadline=0;return 0;}
 static void done(hd540_service *s)
 {
  s->state=HD540_DONE;s->recovering=0;s->deadline=s->retry=0;
@@ -34,7 +42,7 @@ int hd540_service_tick(hd540_service *s,const hd540_ops *o,uint64_t now,
    s->sequence=q->sequence;answer=1;s->had_error=0;
    int test=q->action==HD540_TEST||q->action==HD540_ROUNDTRIP||q->action==HD540_HDMI_CONTROL||q->action==HD540_HDMI_720_CONTROL;
    if((q->action==HD540_INSPECT||test)&&(!test||q->value==HD540_EXPERIMENTAL_VALUE)&&
-      (q->action!=HD540_TEST||(s->roundtrip_ok&&s->hdmi_progressive_ok))&&
+      (q->action!=HD540_TEST||(s->roundtrip_ok&&(HD540_TEST_NEEDS_AVI_CONTROL?s->hdmi_progressive_ok:1)))&&
       ((q->action!=HD540_HDMI_CONTROL&&q->action!=HD540_HDMI_720_CONTROL)||s->roundtrip_ok)&&!o->prepare(o->user)){
     if(!test)s->state=HD540_IDLE;
     else{

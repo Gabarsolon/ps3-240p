@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: MIT. Native VSH interfaces; optional checked CFW RAM
  * experiments. No direct MMIO, flash, boot or encoder programming. */
 #include "native.h"
+#ifdef CRT_CUSTOM_HDMI
+#include "../hdmi_custom/video.h"
+#endif
 #include "../../plugin/vsh_video.h"
 #ifdef CRT_XGA_PROBE
 #include "xga_patch.h"
@@ -143,12 +146,13 @@ static int query(vsh_video_state *s)
  }
  return 0;
 }
+static int app_active(void *u);
 static int prepare(void *u,unsigned selected)
 {
  (void)u;
  if(selected<1||selected>DPROBE_PROFILES)return fail("unsupported_preset");
  if(dirty[0]||dirty[1]||debug_dirty)return fail("previous_caps_recovery_pending");
- if(flag("/dev_hdd0/tmp/240p_app.active")||flag("/dev_hdd0/tmp/240p_enforcer.on"))return fail("app_or_sd_enforcement_active");
+ if(app_active(u)||flag("/dev_hdd0/tmp/240p_enforcer.on"))return fail("app_or_sd_enforcement_active");
  profile=selected;note("preset",profile);
  if(vsh_video_bind()||identities())return fail("unsupported_native_display_identity");
  uint32_t export=vsh_video_export("xsetting",0x4712f276),table,descriptor,code;
@@ -195,6 +199,9 @@ static int prepare(void *u,unsigned selected)
  }
  if(read32(0x70f13c,&debug_saved)||debug_saved)return fail("existing_debug_monitor_override");
  note("saved_debug_monitor",debug_saved);device_dump();
+#ifdef CRT_DIAG_HD_WRAPPER
+ if(profile>=5)return fail("diag_hd_wrapper_build_xga_disabled");
+#endif
 #ifdef CRT_XGA_PROBE
  if(profile>=4){
   if(xga.dirty||xga_cache.dirty||xga_source_patch.dirty)return fail("xga_recovery_pending");
@@ -220,13 +227,21 @@ static int submit_flags(const vsh_video_state *s,uint32_t flags,unsigned mode)
  if(pc&&(s!=&source||mode!=source_mode()||(flags&0x003fc000u)!=0x40000||masks_at(1)!=1))return fail("unsupported_pc_mapping");
  if((mode!=source_mode()&&mode!=saved.mode)||(!pc&&(flags&0xff)!=5)||(flags&0xf00)==0xf00||
     s->format!=saved.format||s->pitch<source_width()*4||s->pitch>=32768||(s->pitch&7))return fail("unsupported_source_contract");
- int rc=update_display(0,flags|0x10000000u,mode,s->format,s->pitch,0,1);
+ int rc;
+#ifdef CRT_CUSTOM_HDMI
+ rc=hc_video_submit(update_display,flags|0x10000000u,mode,s->format,s->pitch);
+#else
+ rc=update_display(0,flags|0x10000000u,mode,s->format,s->pitch,0,1);
+#endif
  note("submit_rc",(unsigned)rc);return rc;
 }
 static int submit(const vsh_video_state *s,unsigned mode){return submit_flags(s,s->flags,mode);}
 static int stock(void *u){(void)u;return profile==3||profile==9?0:submit(&saved,source_mode());}
 static int at_stock(void *u)
 {
+#ifdef CRT_CUSTOM_HDMI
+ int video_ready=hc_video_ready();if(video_ready!=1)return video_ready;
+#endif
  (void)u;vsh_video_state s;if(query(&s))return -1;
  if(profile==9){
   int match=!s.state&&s.mode==saved.mode&&s.format==saved.format&&s.pitch==saved.pitch&&
@@ -266,10 +281,19 @@ static int candidate(void *u)
  if(profile>=5&&hd540_cache_apply(&xga_cache))return fail("xga_cache_attachment_failed");
  if(profile>=4&&xga_patch_apply(&xga))return fail("xga_apply_failed");
 #endif
+#ifdef CRT_CUSTOM_HDMI
+ /* An active app keeps its own GCM allocation: VSH does not allocate the
+  * XMB's patched 1024-wide buffer. Supply the checked XGA source pitch
+  * explicitly so the existing exact packet normalizer can recognize it. */
+ if(profile==9&&hc_video_app_alive())source.pitch=1024u*4u;
+#endif
  return submit_flags(&source,flags,mode);
 }
 static int at_target(void *u,unsigned kind)
 {
+#ifdef CRT_CUSTOM_HDMI
+ int video_ready=hc_video_ready();if(video_ready!=1)return video_ready;
+#endif
  if(kind==DP_STOCK720)return at_stock(u);
  vsh_video_state s;if(query(&s))return -1;
  if(s.state!=0)return 0;
@@ -281,8 +305,17 @@ static int at_target(void *u,unsigned kind)
   patch_cached_video v;if(patch_read_cached_video(&xga_transport,&v))return -1;
   note("xga_cache_vid",v.head[0].vid);note("xga_cache_horizontal",(unsigned)(v.head[0].raster[0]>>32)+1);
   if(profile>=5){
-   uint32_t trace[HD540_CACHE_SAMPLES];int rc=hd540_cache_snapshot(&xga_cache,trace);if(rc<=0)return rc;
-   static const char *const names[]={"xga_callbacks","xga_callback_busy","xga_fp_control","xga_fp_scale","xga_hstart","xga_hend","xga_callback_rc","xga_ystep","xga_vstart","xga_vend","xga_xstep","xga_input_width","xga_packet_count","xga_packet_length","xga_packet_head","xga_packet_vid","xga_packet_width","xga_packet_height","xga_packet_pitch","xga_packet_format","xga_packet_normalized","xga_packet_restored"};
+#ifdef CRT_DIAG_HD_WRAPPER
+   uint32_t trace[24]={0}; /* unreachable: profile>=5 refused */
+#else
+   uint32_t trace[HD540_CACHE_SAMPLES];
+#endif
+   int rc=hd540_cache_snapshot(&xga_cache,trace);if(rc<=0)return rc;
+   static const char *const names[]={"xga_callbacks","xga_callback_busy","xga_fp_control","xga_fp_scale","xga_hstart","xga_hend","xga_callback_rc","xga_ystep","xga_vstart","xga_vend","xga_xstep","xga_input_width","xga_packet_count","xga_packet_length","xga_packet_head","xga_packet_vid","xga_packet_width","xga_packet_height","xga_packet_pitch","xga_packet_format","xga_packet_normalized","xga_packet_restored"
+#ifdef CRT_CUSTOM_HDMI
+    ,"source_pitch","source_height"
+#endif
+   };
    for(unsigned i=0;i<HD540_CACHE_SAMPLES;i++)note(names[i],trace[i]);
    if(xga_patch_cache(&xga,1)!=1)return 0;
    if(profile==9){
@@ -333,6 +366,9 @@ static int restore(void *u)
 }
 static int at_original(void *u)
 {
+#ifdef CRT_CUSTOM_HDMI
+ int video_ready=hc_video_ready();if(video_ready!=1)return video_ready;
+#endif
  (void)u;vsh_video_state s;if(query(&s)||masks_at(0)!=1)return 0;
  unsigned mismatch=(!!s.state)|((s.mode!=saved.mode)<<1)|((s.format!=saved.format)<<2)|
   ((s.pitch!=saved.pitch)<<3)|((((s.flags^saved.flags)&~0x10000000u)!=0)<<4)|
@@ -345,7 +381,11 @@ static int at_original(void *u)
 #endif
  return !mismatch;
 }
-static int app_active(void *u){(void)u;return flag("/dev_hdd0/tmp/240p_app.active");}
+static int app_active(void *u){(void)u;
+#ifdef CRT_CUSTOM_HDMI
+ if(hc_video_app_alive())return 0;
+#endif
+ return flag("/dev_hdd0/tmp/240p_app.active");}
 const dp_ops *dp_native_ops(void)
 {
  static const dp_ops ops={prepare,stock,caps,candidate,at_stock,at_target,restore,at_original,clock_now,app_active,0};return &ops;

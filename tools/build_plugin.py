@@ -60,16 +60,39 @@ def main():
     variants.add_argument("--display-probe", action="store_true",
                           help="Build standalone timed native PC-mode probe under build/display-probe")
     variants.add_argument("--xga-probe", action="store_true", help="Build isolated CFW-only fixed-clock XGA/scaler probe")
+    variants.add_argument("--hdmi-custom", action="store_true", help="Build session HDMI confirmation/enforcement helper")
+    parser.add_argument("--diag-hd-wrapper", action="store_true", help="With --hdmi-custom: use the dev19 540p cache wrapper; XGA cache profiles refused")
+    variants.add_argument("--hdmi-lowline", action="store_true",
+                          help="Build isolated stock SD HDMI controls under build/hdmi-lowline")
     parser.add_argument("--name", default="vsh_240p")
     parser.add_argument("--keep-elf", action="store_true",
                         help="Keep the intermediate ELF (default: keep it, it is the packer input)")
     args = parser.parse_args()
+    if args.hdmi_lowline:
+        directory = ROOT / "build/hdmi-lowline/plugin"
+        directory.mkdir(parents=True, exist_ok=True)
+        ELF, PRX, SPRX = (directory / ("vsh_240p" + suffix) for suffix in (".elf", ".prx", ".sprx"))
+        SOURCE = ROOT / "experiments/hdmi_lowline/plugin.c"
+        if args.name == "vsh_240p":
+            args.name = "crt_lowline"
     if args.experimental_hd540:
         from build_hd540_cache import build
         build()
     if args.xga_probe:
         from build_xga_cache import build
         build()
+    if args.hdmi_custom:
+        from build_xga_cache import build
+        build(custom=True)
+        if args.diag_hd_wrapper:
+            from build_hd540_cache import build as build_hd
+            build_hd()
+        directory = ROOT / "build/hdmi-custom/plugin"
+        directory.mkdir(parents=True, exist_ok=True)
+        ELF, PRX, SPRX = (directory / ("vsh_240p" + suffix) for suffix in (".elf", ".prx", ".sprx"))
+        SOURCE = ROOT / "experiments/hdmi_custom/plugin.c"
+        if args.name == "vsh_240p":
+            args.name = "crt_hdmi_custom"
     if args.experimental_hd540 or args.pid_compatibility or args.display_probe or args.xga_probe or args.audio_diagnostic:
         directory = ROOT / "build" / ("hd540" if args.experimental_hd540 else "audio-diagnostic" if args.audio_diagnostic else "xga-probe" if args.xga_probe else "display-probe" if args.display_probe else "pid-compat") / "plugin"
         directory.mkdir(parents=True, exist_ok=True)
@@ -109,6 +132,19 @@ def main():
     if args.xga_probe:
         compile_cmd[1:1] = ["-DCRT_XGA_PROBE=1"]
         compile_cmd += [ROOT / "experiments/display_probe/xga_patch.c", ROOT / "experiments/display_probe/xga_source.c", ROOT / "app/source/sysmgr.c", ROOT / "app/source/lv1_patch.c", ROOT / "app/source/hd540_cache.c"]
+    if args.hdmi_custom:
+        compile_cmd[1:1] = ["-DCRT_CUSTOM_HDMI=1", "-DCRT_XGA_PROBE=1"] + (["-DCRT_DIAG_HD_WRAPPER=1"] if args.diag_hd_wrapper else [])
+        for old in (PLUGIN / "vsh_gamma.c", PLUGIN / "gamma_service.c"):
+            compile_cmd.remove(old)
+        compile_cmd += [ROOT / ("experiments/hdmi_custom/" + name + ".c") for name in ("service", "backend", "input", "confirm", "video")]
+        compile_cmd += [ROOT / ("experiments/display_probe/" + name + ".c") for name in ("native", "service", "xga_patch", "xga_source")]
+        compile_cmd += [PLUGIN / "vsh_hd540.c", PLUGIN / "hd540_service.c"]
+        compile_cmd += [ROOT / ("app/source/" + name + ".c") for name in ("lv1_patch", "hd540_cache", "hd540_patch", "hd540_hdmi", "hd540_scale")]
+    if args.hdmi_lowline:
+        for old in (PLUGIN / "vsh_gamma.c", PLUGIN / "gamma_service.c"):
+            compile_cmd.remove(old)
+        compile_cmd += [ROOT / "experiments/hdmi_lowline/native.c",
+                        ROOT / "experiments/hdmi_lowline/service.c", ROOT / "app/source/lv1_patch.c"]
     if args.audio_diagnostic:
         compile_cmd[1:1] = ["-DCRT_PS1_AUDIO_DIAGNOSTIC=1"]
         compile_cmd += [PLUGIN / "ps1_audio_log.c", PLUGIN / "vsh_ps1_audio_log.c"]

@@ -8,6 +8,10 @@
 .section .text
 .balign 8
 .global xga_cache_payload
+.set SOURCE_CONTROL,96
+.ifdef CRT_CUSTOM_HDMI
+.set SOURCE_CONTROL,104
+.endif
 xga_cache_payload:
     mflr 0
     std 0,16(1)
@@ -52,11 +56,11 @@ xga_cache_payload:
     stw 12,84(11)
     /* Only native-XGA control may normalize the observed inconsistent
      * head0 / VID13 / ARGB /1280x720 /4096-byte source tuple. */
-    lwz 12,96(11)
+    lwz 12,SOURCE_CONTROL(11)
     xoris 12,12,0x5847
     cmpwi 7,12,0x4139
     bne 7,1f
-    lwz 12,100(11)
+    lwz 12,SOURCE_CONTROL+4(11)
     cmpwi 7,12,4096
     bne 7,1f
     lhz 12,8(4)
@@ -111,8 +115,24 @@ xga_cache_payload:
     ori 11,11,0x5f80
     clrldi 11,11,32
     dcbst 0,11
+.ifdef CRT_CUSTOM_HDMI
+    lis 11,0x8000
+    ori 11,11,0x2f00
+    clrldi 11,11,32
+    dcbst 0,11
+    addi 11,11,0x780
+    dcbst 0,11
+.endif
     sync
     icbi 0,11
+.ifdef CRT_CUSTOM_HDMI
+    addi 11,11,-0x780
+    icbi 0,11
+    lis 11,0x8002
+    ori 11,11,0x5f80
+    clrldi 11,11,32
+    icbi 0,11
+.endif
     lis 11,0x8000
     ori 11,11,0x3100
     clrldi 11,11,32
@@ -194,6 +214,12 @@ xga_cache_payload:
     stw 12,40(11)
     lwz 12,0x200(9)
     stw 12,44(11)
+.ifdef CRT_CUSTOM_HDMI
+    lwz 12,0x820(9)
+    stw 12,88(11)
+    lwz 12,0x210(9)
+    stw 12,92(11)
+.endif
     ld 3,128(1)
     stw 3,24(11)
     li 12,0

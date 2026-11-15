@@ -1,4 +1,7 @@
 #include "vsh_video.h"
+#ifdef CRT_CUSTOM_HDMI
+#include "../experiments/hdmi_custom/video.h"
+#endif
 #ifndef VSH_VIDEO_HOST_TEST
 #include <sys/process.h>
 #include <ppu-lv2.h>
@@ -116,5 +119,16 @@ int vsh_video_hd_submit(const vsh_video_state *surface,uint32_t flags,uint32_t m
 {
  if(!update_display||!surface||(flags&0xff)!=5||(flags&0xf00)==0xf00||!mode||
     !surface->pitch||surface->pitch<1920*4u||surface->pitch>65536||(surface->pitch&3))return -1;
+#ifdef CRT_CUSTOM_HDMI
+ return hc_video_submit(update_display,flags,mode,surface->format,surface->pitch);
+#else
  return update_display(0,flags,mode,surface->format,surface->pitch,NULL,1);
+#endif
 }
+#ifdef CRT_CUSTOM_HDMI
+int vsh_video_hd_submit_pitch(uint32_t flags,uint32_t mode,uint32_t format,uint32_t pitch)
+{
+ if(!update_display||(flags&0xff)!=5||(flags&0xf00)==0xf00||!mode||pitch<1280*4u||pitch>65536||(pitch&3))return -1;
+ return hc_video_submit(update_display,flags,mode,format,pitch);
+}
+#endif

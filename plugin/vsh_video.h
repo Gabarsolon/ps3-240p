@@ -17,4 +17,8 @@ int vsh_video_configure(unsigned resolution,unsigned aspect);
 /* Experimental HD calls are separate from the stable SD corrector. */
 int vsh_video_hd720(uint32_t *,uint32_t *);
 int vsh_video_hd_submit(const vsh_video_state *,uint32_t,uint32_t);
+#ifdef CRT_CUSTOM_HDMI
+/* Native request with an explicit surface pitch (>=1280*4), via the app handshake. */
+int vsh_video_hd_submit_pitch(uint32_t flags,uint32_t mode,uint32_t format,uint32_t pitch);
+#endif
 #endif

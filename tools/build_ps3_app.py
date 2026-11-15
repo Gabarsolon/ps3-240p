@@ -27,7 +27,7 @@ def sha256_file(path: Path) -> str:
             h.update(chunk)
     return h.hexdigest()
 
-def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, display_presets=False, audio_diagnostic=False, xga_presets=False):
+def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, display_presets=False, audio_diagnostic=False, xga_presets=False, hdmi_custom=False):
     if xga_presets:
         display_presets = True
     sdk = Path(sdk_path).resolve()
@@ -38,8 +38,8 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, displ
     app_build_dir = ROOT / "app" / "build"
     staging_dir = build_dir / "staging"
     deliverables_dir = ROOT / "deliverables"
-    if experimental_hd540 or pid_compatibility or display_presets or audio_diagnostic:
-        build_dir = ROOT / "build" / ("hd540" if experimental_hd540 else "audio-diagnostic" if audio_diagnostic else "xga-presets" if xga_presets else "display-presets" if display_presets else "pid-compat")
+    if experimental_hd540 or pid_compatibility or display_presets or audio_diagnostic or hdmi_custom:
+        build_dir = ROOT / "build" / ("hdmi-custom" if hdmi_custom else "hd540" if experimental_hd540 else "audio-diagnostic" if audio_diagnostic else "xga-presets" if xga_presets else "display-presets" if display_presets else "pid-compat")
         app_build_dir = build_dir / "app"
         staging_dir = build_dir / "staging"
         deliverables_dir = build_dir / "deliverables"
@@ -51,10 +51,10 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, displ
     if audio_diagnostic:
         helper = ROOT / "build/audio-diagnostic/plugin/vsh_240p.sprx"
         version = "01.45"
-    if display_presets:
+    if display_presets or hdmi_custom:
         helper = ROOT / "build/pid-compat/plugin/vsh_240p.sprx"
-        version = "01.71" if xga_presets else "01.70"
-        probe = ROOT / ("build/xga-probe/plugin/vsh_240p.sprx" if xga_presets else "build/display-probe/plugin/vsh_240p.sprx")
+        version = "01.73" if hdmi_custom else "01.71" if xga_presets else "01.70"
+        probe = ROOT / ("build/hdmi-custom/plugin/vsh_240p.sprx" if hdmi_custom else "build/xga-probe/plugin/vsh_240p.sprx" if xga_presets else "build/display-probe/plugin/vsh_240p.sprx")
         if not probe.exists():
             raise FileNotFoundError(f"Build the matching preset helper first: {probe}")
     if not helper.exists():
@@ -84,9 +84,10 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, displ
     run("cmake", "-S", ROOT / "app", "-B", app_build_dir, "-G", "Ninja",
         f"-DCMAKE_TOOLCHAIN_FILE={toolchain_cmake}",
         f"-DCRT_ENABLE_HD540={'ON' if experimental_hd540 else 'OFF'}",
-        f"-DCRT_APP_VERSION={'1.4.4-rc2' if audio_diagnostic else '1.6.0-dev2' if xga_presets else '1.6.0-dev1' if display_presets else '1.4.4-rc1' if pid_compatibility else ''}",
+        f"-DCRT_APP_VERSION={'1.6.0-dev4' if hdmi_custom else '1.4.4-rc2' if audio_diagnostic else '1.6.0-dev2' if xga_presets else '1.6.0-dev1' if display_presets else '1.4.4-rc1' if pid_compatibility else ''}",
         f"-DCRT_ENABLE_PRESETS={'ON' if display_presets else 'OFF'}",
-        f"-DCRT_ENABLE_XGA={'ON' if xga_presets else 'OFF'}")
+        f"-DCRT_ENABLE_XGA={'ON' if xga_presets else 'OFF'}",
+        f"-DCRT_ENABLE_CUSTOM_HDMI={'ON' if hdmi_custom else 'OFF'}")
     run("cmake", "--build", app_build_dir, "--target", "ps3-240p-app")
 
     elf_file = app_build_dir / "ps3-240p-app.elf"
@@ -126,8 +127,8 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, displ
         shutil.copyfile(icon_src, icon_dst)
     shutil.copyfile(ROOT / "app" / "BuzzBridge-LICENSE", usr_dir / "BuzzBridge-LICENSE.txt")
     shutil.copyfile(helper, usr_dir / "vsh_240p.sprx")
-    if display_presets:
-        probe_name = "crt_xga_probe.sprx" if xga_presets else "crt_display_probe.sprx"
+    if display_presets or hdmi_custom:
+        probe_name = "crt_hdmi_custom.sprx" if hdmi_custom else "crt_xga_probe.sprx" if xga_presets else "crt_display_probe.sprx"
         shutil.copyfile(probe, usr_dir / probe_name)
 
     # 5. Build and Finalize PKG
@@ -142,6 +143,8 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, displ
 
     if display_presets:
         out_pkg = deliverables_dir / ("CRT-Toolset-1.6.0-dev2.pkg" if xga_presets else "CRT-Toolset-1.6.0-dev1.pkg")
+    if hdmi_custom:
+        out_pkg = deliverables_dir / "CRT-Toolset-1.6.0-dev4.pkg"
 
     run(pkg_tool, "--contentid", CONTENT_ID, f"{staging_dir}/", out_pkg)
     run(finalize_tool, out_pkg)
@@ -154,7 +157,7 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, displ
     assert "ICON0.PNG" in packaged
     assert "USRDIR/BuzzBridge-LICENSE.txt" in packaged
     assert "USRDIR/vsh_240p.sprx" in packaged
-    if display_presets:
+    if display_presets or hdmi_custom:
         assert packaged["USRDIR/" + probe_name] == probe.read_bytes()
     for name, data in packaged.items():
         original = (staging_dir / name).read_bytes()
@@ -183,6 +186,7 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, displ
         "pid_compatibility": pid_compatibility,
         "display_presets": display_presets,
         "xga_presets": xga_presets,
+        "hdmi_custom": hdmi_custom,
         "audio_diagnostic": audio_diagnostic,
         "validation": "Host/package checks only; experimental HDMI 540p waveform and recovery unverified" if experimental_hd540 else "Proportional 240p/288p typography with non-overlapping line spacing and CRT overscan margins",
         "package": out_pkg.name,
@@ -200,6 +204,8 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, displ
 
     if display_presets:
         manifest["validation"] = "Timed HDMI preset development build; XGA uses guarded CFW RAM patches" if xga_presets else "Timed native HDMI preset development build; verify menu and receiver behavior separately"
+    if hdmi_custom:
+        manifest["validation"] = "Session HDMI confirmation/enforcement edition; package checks do not establish live controller, mode or game compatibility"
 
     manifest_path = deliverables_dir / "package_manifest.json"
     with open(manifest_path, "w", encoding="utf-8") as f:
@@ -225,6 +231,7 @@ if __name__ == "__main__":
                           help="Build SD-only v1.4.4-rc1 under build/pid-compat without replacing release assets")
     variants.add_argument("--display-presets", action="store_true", help="Build isolated timed PC preset menu under build/display-presets")
     variants.add_argument("--xga-presets", action="store_true", help="Build isolated CFW XGA plus native PC preset menu under build/xga-presets")
+    variants.add_argument("--hdmi-custom", action="store_true", help="Build unified HDMI confirmation/enforcement development app")
     variants.add_argument("--audio-diagnostic", action="store_true", help="Build isolated SD v1.4.4-rc2 with bounded read-only PS1 audio diagnostics")
     args = parser.parse_args()
-    main(args.sdk, args.experimental_hd540, args.pid_compatibility, args.display_presets, args.audio_diagnostic, args.xga_presets)
+    main(args.sdk, args.experimental_hd540, args.pid_compatibility, args.display_presets, args.audio_diagnostic, args.xga_presets, args.hdmi_custom)

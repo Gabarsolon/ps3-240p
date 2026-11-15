@@ -2,6 +2,8 @@
 #include "service.h"
 #define SECOND UINT64_C(1000000)
 int dp_busy(const dp_service *s){return s->owned||s->state==DP_RESTORE||s->state==DP_WAIT_APP;}
+int dp_keep(dp_service *s)
+{if(s->state!=DP_ACTIVE||s->kind!=DP_WXGA)return -1;s->state=DP_HELD;s->deadline=0;return 0;}
 static uint64_t fresh(const dp_ops *o,uint64_t now){return o->clock?o->clock(o->user):now;}
 static void recover(dp_service *s,const dp_ops *o,uint64_t now,unsigned detail)
 {

@@ -22,7 +22,7 @@
 #define DPROBE_LOG DPROBE_ROOT ".log"
 
 enum {DP_INSPECT=1,DP_STOCK720,DP_CAPS,DP_WXGA,DP_CANCEL,DP_AUTO};
-enum {DP_IDLE,DP_WAIT_SOURCE,DP_WAIT_TARGET,DP_ACTIVE,DP_RESTORE,DP_DONE,DP_REFUSED,DP_RECOVERY_FAILED,DP_WAIT_APP};
+enum {DP_IDLE,DP_WAIT_SOURCE,DP_WAIT_TARGET,DP_ACTIVE,DP_RESTORE,DP_DONE,DP_REFUSED,DP_RECOVERY_FAILED,DP_WAIT_APP,DP_HELD};
 enum {DP_OK,DP_CANCELLED,DP_PREPARE_ERROR,DP_ENTER_ERROR,DP_TIMEOUT,DP_RESTORE_ERROR,DP_PREREQUISITE,DP_BAD_REQUEST};
 typedef struct {uint32_t magic,sequence,action,value;} dp_request;
 typedef struct {uint32_t magic,sequence,state,detail;} dp_reply;
@@ -41,5 +41,7 @@ typedef struct {
  uint64_t deadline,retry,app_settle;
 } dp_service;
 int dp_busy(const dp_service *);
+/* Explicit confirmation of a candidate; controls cannot be held. */
+int dp_keep(dp_service *);
 int dp_tick(dp_service *,const dp_ops *,uint64_t,const dp_request *,dp_reply *);
 #endif

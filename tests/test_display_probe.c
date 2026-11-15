@@ -96,6 +96,9 @@ int main(void)
  at_source=1;tick();tick();now=s.deadline;tick();original=1;tick();assert(s.state==DP_DONE&&!s.automatic&&candidates==1);
  reset();app_open=1;request(DP_AUTO);request(DP_CANCEL);assert(s.state==DP_DONE&&!restores&&!stock_calls);
  reset();app_open=1;request(DP_AUTO);now=s.deadline;tick();assert(s.state==DP_REFUSED&&s.detail==DP_TIMEOUT&&!stock_calls&&!restores);
- puts("PASS: display-probe controls, full hold, cancellation, partial-write recovery, fresh-clock deadlines, duplicates and recovery latch");
+ reset();s.owned=1;s.state=DP_ACTIVE;s.kind=DP_STOCK720;assert(dp_keep(&s)==-1);
+ s.kind=DP_WXGA;assert(!dp_keep(&s)&&s.state==DP_HELD&&dp_busy(&s));now+=90000000;tick();assert(s.state==DP_HELD);
+ original=0;request(DP_CANCEL);assert(s.state==DP_RESTORE&&restores==1);original=1;tick();assert(s.state==DP_DONE&&!dp_busy(&s));
+ puts("PASS: display-probe controls, full hold/confirmed keep, cancellation, partial-write recovery, fresh-clock deadlines, duplicates and recovery latch");
  return 0;
 }

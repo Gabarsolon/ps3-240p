@@ -8,6 +8,13 @@ static vsh_video_state current;
 static uint32_t masks[2],debug_type,manager,objects[2];
 static unsigned writes,updates;
 static int blocked,identity_error,partial_failure,map_error;
+#ifdef CRT_CUSTOM_HDMI
+static int app_owned;
+int hc_video_app_alive(void){return app_owned;}
+int hc_video_ready(void){return 1;}
+int hc_video_submit(int (*fn)(unsigned,uint32_t,uint32_t,uint32_t,uint32_t,void *,int),uint32_t flags,uint32_t mode,uint32_t format,uint32_t pitch)
+{return fn(0,flags,mode,format,pitch,0,1);}
+#endif
 static uint32_t word(uint32_t at)
 {
  if(at==0x738bf4)return manager;
@@ -25,7 +32,7 @@ uint32_t vsh_video_export(const char *name,uint32_t nid){(void)name;assert(nid==
 int vsh_video_bind(void){return 0;}
 int vsh_video_query(vsh_video_state *s){*s=current;return 0;}
 int vsh_video_hd720(uint32_t *f,uint32_t *m){*f=current.flags;*m=11;return 0;}
-int dp_mock_flag(const char *path){(void)path;return blocked;}
+int dp_mock_flag(const char *path){return !strcmp(path,"/dev_hdd0/tmp/240p_app.active")?(blocked&1):!!(blocked&2);}
 uint64_t dp_mock_clock(void){return 1234;}
 int dp_mock_identity(uint32_t at,unsigned n,uint64_t h){assert(at&&n&&h);return identity_error;}
 uint32_t dp_mock_table(void){return 0x100000;}
@@ -75,6 +82,11 @@ int main(void)
  reset();current.format=7;assert(o->prepare(0,1)==1&&!writes&&!updates);
  reset();current.state=2;assert(o->prepare(0,1)==1&&!writes&&!updates);
  reset();blocked=1;assert(o->prepare(0,1)==-1&&!writes&&!updates);
+#ifdef CRT_CUSTOM_HDMI
+ app_owned=1;assert(!o->prepare(0,1)&&!writes&&!updates); /* Verified app owns the handshake. */
+ blocked=2;assert(o->prepare(0,1)==-1&&!writes&&!updates); /* SD enforcement remains excluded. */
+ app_owned=0;
+#endif
  reset();identity_error=1;assert(o->prepare(0,1)==-1&&!writes&&!updates);
  reset();current.flags=0x1010202;assert(o->prepare(0,1)==-1&&!writes&&!updates);
  reset();current.raw[9]=1;assert(o->prepare(0,1)==-1&&!writes&&!updates);

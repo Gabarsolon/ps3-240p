@@ -2,7 +2,13 @@
 #ifndef HD540_CACHE_H
 #define HD540_CACHE_H
 #include "lv1_patch.h"
-#ifdef CRT_XGA_PROBE
+/* CRT_DIAG_HD_WRAPPER: diagnostic custom build using the dev19 540p wrapper. */
+#if defined(CRT_CUSTOM_HDMI) && !defined(CRT_DIAG_HD_WRAPPER)
+#include "../../experiments/hdmi_custom/cache_payload.h"
+#define HD540_CACHE_SAMPLES 24u
+#define HD540_CACHE_TRACE_WORDS 13u
+#define HD540_CACHE_EXTRA_WORDS 1u
+#elif defined(CRT_XGA_PROBE) && !defined(CRT_DIAG_HD_WRAPPER)
 #include "../../experiments/display_probe/xga_cache_payload.h"
 #define HD540_CACHE_SAMPLES 22u
 #define HD540_CACHE_TRACE_WORDS 12u
