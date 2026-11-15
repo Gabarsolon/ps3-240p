@@ -18,10 +18,16 @@ static int select_modes(switch_flow *f,unsigned target,unsigned current,int anal
  if(!analog)return fail(f,"Select AV Multi Out in XMB display settings first");
  if(current!=4&&current!=5)return fail(f,"Start from 480i or 576i for this SD experiment");
  f->original=current;f->target=target;f->alternate=target==5?4:5;
- /* Avoid 480p/720p on a 15 kHz SCART television. If the firmware exposes no
-  * second SD family, no safe profile-changing transition is known here. */
- if(f->available(f->user,target)<=0||f->available(f->user,f->alternate)<=0)
-  return fail(f,"Firmware does not expose both SD modes; timing test stopped");
+ /* Avoid 480p/720p on a 15 kHz SCART television; the transition uses only the
+  * two interlaced SD families (480i and 576i), both 15 kHz-safe.
+  * cellVideoOutGetResolutionAvailability reports only the console's region SD
+  * standard, so a PAL unit advertises 576i alone and an NTSC unit 480i alone,
+  * yet the encoder drives either interlaced family and the app configures
+  * either in practice. Require only that one SD family be exposed; the
+  * transition still drives both, and configure() plus the automatic revert
+  * recover a console that genuinely refuses the second family. */
+ if(f->available(f->user,target)<=0&&f->available(f->user,f->alternate)<=0)
+  return fail(f,"Firmware exposes no SD mode for AV Multi; timing test stopped");
  return 0;
 }
 int switch_revert(switch_flow *f)

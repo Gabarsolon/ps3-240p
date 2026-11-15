@@ -27,9 +27,12 @@ def sha256_file(path: Path) -> str:
             h.update(chunk)
     return h.hexdigest()
 
-def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, display_presets=False, audio_diagnostic=False, xga_presets=False, hdmi_custom=False):
+def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, display_presets=False, audio_diagnostic=False, xga_presets=False, hdmi_custom=False, sd_timing_fix=False):
     if xga_presets:
         display_presets = True
+    if sd_timing_fix:
+        # dev5 carries the SD-timing-gate fix on the dev4 (HDMI custom) feature set.
+        hdmi_custom = True
     sdk = Path(sdk_path).resolve()
     if not sdk.exists():
         raise FileNotFoundError(f"PS3DK SDK not found at {sdk}")
@@ -53,7 +56,7 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, displ
         version = "01.45"
     if display_presets or hdmi_custom:
         helper = ROOT / "build/pid-compat/plugin/vsh_240p.sprx"
-        version = "01.73" if hdmi_custom else "01.71" if xga_presets else "01.70"
+        version = "01.74" if sd_timing_fix else "01.73" if hdmi_custom else "01.71" if xga_presets else "01.70"
         probe = ROOT / ("build/hdmi-custom/plugin/vsh_240p.sprx" if hdmi_custom else "build/xga-probe/plugin/vsh_240p.sprx" if xga_presets else "build/display-probe/plugin/vsh_240p.sprx")
         if not probe.exists():
             raise FileNotFoundError(f"Build the matching preset helper first: {probe}")
@@ -84,7 +87,7 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, displ
     run("cmake", "-S", ROOT / "app", "-B", app_build_dir, "-G", "Ninja",
         f"-DCMAKE_TOOLCHAIN_FILE={toolchain_cmake}",
         f"-DCRT_ENABLE_HD540={'ON' if experimental_hd540 else 'OFF'}",
-        f"-DCRT_APP_VERSION={'1.6.0-dev4' if hdmi_custom else '1.4.4-rc2' if audio_diagnostic else '1.6.0-dev2' if xga_presets else '1.6.0-dev1' if display_presets else '1.4.4-rc1' if pid_compatibility else ''}",
+        f"-DCRT_APP_VERSION={'1.6.0-dev5' if sd_timing_fix else '1.6.0-dev4' if hdmi_custom else '1.4.4-rc2' if audio_diagnostic else '1.6.0-dev2' if xga_presets else '1.6.0-dev1' if display_presets else '1.4.4-rc1' if pid_compatibility else ''}",
         f"-DCRT_ENABLE_PRESETS={'ON' if display_presets else 'OFF'}",
         f"-DCRT_ENABLE_XGA={'ON' if xga_presets else 'OFF'}",
         f"-DCRT_ENABLE_CUSTOM_HDMI={'ON' if hdmi_custom else 'OFF'}")
@@ -145,6 +148,8 @@ def main(sdk_path: str, experimental_hd540=False, pid_compatibility=False, displ
         out_pkg = deliverables_dir / ("CRT-Toolset-1.6.0-dev2.pkg" if xga_presets else "CRT-Toolset-1.6.0-dev1.pkg")
     if hdmi_custom:
         out_pkg = deliverables_dir / "CRT-Toolset-1.6.0-dev4.pkg"
+    if sd_timing_fix:
+        out_pkg = deliverables_dir / "CRT-Toolset-1.6.0-dev5.pkg"
 
     run(pkg_tool, "--contentid", CONTENT_ID, f"{staging_dir}/", out_pkg)
     run(finalize_tool, out_pkg)
@@ -233,5 +238,6 @@ if __name__ == "__main__":
     variants.add_argument("--xga-presets", action="store_true", help="Build isolated CFW XGA plus native PC preset menu under build/xga-presets")
     variants.add_argument("--hdmi-custom", action="store_true", help="Build unified HDMI confirmation/enforcement development app")
     variants.add_argument("--audio-diagnostic", action="store_true", help="Build isolated SD v1.4.4-rc2 with bounded read-only PS1 audio diagnostics")
+    variants.add_argument("--sd-timing-fix", action="store_true", help="Build v1.6.0-dev5 (dev4 feature set) with the relaxed single-SD-family timing gate")
     args = parser.parse_args()
-    main(args.sdk, args.experimental_hd540, args.pid_compatibility, args.display_presets, args.audio_diagnostic, args.xga_presets, args.hdmi_custom)
+    main(args.sdk, args.experimental_hd540, args.pid_compatibility, args.display_presets, args.audio_diagnostic, args.xga_presets, args.hdmi_custom, args.sd_timing_fix)
