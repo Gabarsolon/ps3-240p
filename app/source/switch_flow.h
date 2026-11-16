@@ -6,6 +6,12 @@ typedef struct {
  patch_context *patch;
  int (*available)(void *,unsigned);
  int (*configure)(void *,unsigned);
+ /* Same SD mode with a non-timing change (aspect toggle) so the request is not
+  * dropped as a same-mode no-op; may be NULL. */
+ int (*reassert)(void *,unsigned);
+ /* Debug: treat the other SD family as refused (exercise the single-SD path
+  * on a console that can flip). */
+ int force_single_sd;
  void *user;
  unsigned original,target,alternate;
  int pending;

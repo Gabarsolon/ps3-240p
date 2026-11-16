@@ -105,6 +105,9 @@ static void is_stock(void)
 static int avail(void *u,unsigned id){(void)u;if(id==1||id==2)return hd_avail;assert(id==4||id==5);return unavailable?unavailable:1;}
 static int video(void *u,unsigned id)
 {(void)u;assert(video_calls<16);calls[video_calls++]=id;return video_calls==fail_video_call?-1:0;}
+static int reasserts,fail_reassert;static uint64_t reassert_flags;
+/* Emulates the AV mode-setter re-validating the head flag when reached. */
+static int reassert_mock(void *u,unsigned id){(void)u;assert(id==4||id==5);reasserts++;if(reassert_flags)put64(c.video_address[26],reassert_flags);return fail_reassert?-1:0;}
 static switch_flow flow(void)
 {switch_flow f={0};f.patch=&c;f.available=avail;f.configure=video;return f;}
 int main(void)
@@ -223,18 +226,52 @@ int main(void)
  assert(f.pending&&patch_state(&c,1)==STATE_PATCHED);
  assert(video_calls==3&&calls[0]==4&&calls[1]==2&&calls[2]==5); /* alternate, HD bounce 720p, target */
  assert(!switch_revert(&f));is_stock();
- /* No HD mode either (720p and 1080i unavailable): last-resort head-flag
-  * invalidation. Issue #1: an NTSC console drives 480i on head 1, so the cleared
-  * head must be the ACTUALLY programmed one (head 1), not the target default. */
+ /* dev10: no reassert, alternate refused, no HD mode: nothing can reach the
+  * mode-setter, so the flow leaves the flag alone and reports success; the
+  * caller's activation check (begin_picture) then reverts. */
  setup();f=flow();hd_avail=0;
- for(int i=0;i<7;i++)put64(c.video_address[9+i],get(NULL,c.video_address[2+i]));   /* head1 raster = head0 */
- for(int i=0;i<5;i++)put64(c.video_address[21+i],get(NULL,c.video_address[16+i])); /* head1 request = head0 */
- put64(c.video_address[26],UINT64_C(0x0000000000000002));                          /* head0 idle, head1 active */
- assert(patch_active_head(&c)==1);
- fail_video_call=1; /* configure(alternate) refused: single-SD path */
+ put64(c.video_address[26],UINT64_C(0x0000000000000002));
+ fail_video_call=1; /* configure(alternate) refused */
  assert(!switch_begin(&f,MODE_240P_NTSC,4,1));
  assert(f.pending&&patch_state(&c,0)==STATE_PATCHED);
- assert(get(NULL,c.video_address[26])==0); /* head 1 flag cleared, not head 0 */
+ assert(video_calls==1&&calls[0]==5); /* only the refused flip */
+ assert(get(NULL,c.video_address[26])==UINT64_C(0x0000000000000002));
+ assert(!switch_revert(&f));is_stock();
+ /* dev9: forced single-SD path (debug flag) never calls configure(alternate).
+  * With a reassert callback the head flag is cleared and the target reasserted
+  * (aspect toggle); the candidate is not live in this mock, so it then bounces
+  * through 720p. */
+ setup();f=flow();f.reassert=reassert_mock;f.force_single_sd=1;reasserts=0;fail_reassert=0;reassert_flags=0;
+ for(int i=0;i<7;i++)put64(c.video_address[9+i],get(NULL,c.video_address[2+i]));
+ for(int i=0;i<5;i++)put64(c.video_address[21+i],get(NULL,c.video_address[16+i]));
+ put64(c.video_address[26],UINT64_C(0x0000000000000002));
+ assert(!switch_begin(&f,MODE_240P_NTSC,4,1));
+ assert(f.pending&&patch_state(&c,0)==STATE_PATCHED&&reasserts==1);
+ assert(get(NULL,c.video_address[26])==0); /* head 1 (programmed) flag cleared */
+ assert(video_calls==2&&calls[0]==2&&calls[1]==4); /* no configure(5); HD bounce then target */
+ assert(!switch_revert(&f));is_stock();
+ assert(reasserts==2); /* revert reasserts the original too */
+ /* Reassert live (candidate in cache): no HD bounce. */
+ setup();f=flow();f.reassert=reassert_mock;f.force_single_sd=1;reasserts=0;fail_reassert=0;reassert_flags=0;
+ assert(!patch_snapshot(&c));assert(!patch_apply(&c,1));
+ for(int i=0;i<7;i++)put64(c.video_address[2+i],c.candidate[33+i]); /* head0 shows PAL candidate */
+ assert(!patch_undo(&c));
+ reassert_flags=UINT64_C(0x0000000200000000); /* mode-setter ran: head0 valid again */
+ assert(!switch_begin(&f,1,5,1));
+ assert(f.pending&&reasserts==1&&video_calls==0); /* activated by reassert alone */
+ /* dev10 all consoles: a dual-SD console also uses the format reassert first;
+  * when it goes live there is no flip at all. When it does not, the old flip
+  * via the other SD family is the fallback. */
+ setup();f=flow();f.reassert=reassert_mock;reasserts=0;fail_reassert=0;
+ reassert_flags=UINT64_C(0x0000000200000000);
+ assert(!patch_snapshot(&c));assert(!patch_apply(&c,1));
+ for(int i=0;i<7;i++)put64(c.video_address[2+i],c.candidate[33+i]);
+ assert(!patch_undo(&c));
+ assert(!switch_begin(&f,1,5,1));
+ assert(f.pending&&reasserts==1&&video_calls==0);
+ setup();f=flow();f.reassert=reassert_mock;reasserts=0;fail_reassert=0;reassert_flags=0;
+ assert(!switch_begin(&f,1,5,1));
+ assert(f.pending&&reasserts==1&&video_calls==2&&calls[0]==4&&calls[1]==5); /* fallback flip */
  assert(!switch_revert(&f));is_stock();
  /* A failed return to the target mode stays fatal and reverts to stock. */
  setup();f=flow();fail_video_call=2;assert(switch_begin(&f,1,5,1)==-1&&!f.pending);is_stock();

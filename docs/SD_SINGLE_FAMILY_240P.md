@@ -68,7 +68,38 @@ non-15 kHz (black on a 15 kHz CRT) but transient. UNKNOWN until live test on the
 issue #1 console: whether 720p is configurable over its component cable and
 whether the return actually loads the patched raster. Fails safe to stock.
 
-## Implementation
+### dev10: in-place reprogram by format reassert (PROVEN, owner PAL console)
+
+dev8's HD bounce cannot help the issue #1 console: its dev8 log shows 720p and
+1080i unavailable (`Resolution availability id=2/1 result=00000000`), so 480i is
+its only mode. What works instead is re-requesting the **same** SD mode with a
+non-timing field changed: the request differs from the current configuration, so
+it is not dropped as a same-mode no-op and reaches the mode-setter, which (with
+the head flag cleared) does a full reprogram from the patched table.
+
+- **PROVEN (dev9b, owner PAL console, single-SD path forced, started at 576i):**
+  aspect 16:9 at 576i is refused (`8002b226`), so the aspect variant is a no-op.
+  The buffer-format variant (`videoConfigure id=5 format=1` then `format=0`)
+  reached the mode-setter: head 1 flag back to valid, raster from stock
+  `574/625 scan_control 00030000` to candidate `576/624 scan_control 00010000`,
+  `Post-switch analog AV cache match=1`, ~0.46 s from BEGIN, no resolution change.
+- dev10 makes this the primary path on all consoles (format, then pitch +1024),
+  with the old SD flip and then the HD bounce as fallbacks. UNKNOWN until tested
+  on an NTSC single-SD console at 480i.
+
+## Implementation (dev10 supersedes the dev8 text below where they differ)
+
+- `reprogram()` (`app/source/switch_flow.c`): clear the programmed head's flag,
+  call `reassert` (`app/source/main.c`: format XBGR then pitch +1024, each
+  restored; returns 0 only when the head flag is valid again = mode-setter ran).
+- `switch_begin_target`: `patch_apply` → `reprogram(target)`; if the candidate is
+  not live, flip via the other SD family, else HD bounce.
+- `switch_revert`: `patch_undo` → `reprogram(original)`; if that fails or a
+  candidate is still live, flip / HD bounce; then `configure(original)`.
+- Debug flag `/dev_hdd0/tmp/240p_force_single_sd.on` treats the other SD family
+  as refused, to exercise the single-SD path on a dual-SD console.
+
+## Implementation (dev8)
 
 - `switch_begin_target` (`app/source/switch_flow.c`): keep the proven flip as
   the primary path (no regression on consoles that can configure the other SD

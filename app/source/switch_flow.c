@@ -30,28 +30,60 @@ static int select_modes(switch_flow *f,unsigned target,unsigned current,int anal
   return fail(f,"Firmware exposes no SD mode for AV Multi; timing test stopped");
  return 0;
 }
+/* Leave for the other SD family; nonzero when refused (or forced refused). */
+static int leave_sd(switch_flow *f,unsigned id)
+{
+ if(f->force_single_sd){
+  if(f->patch->log)f->patch->log("Forced single-SD: configure id=%u treated as refused",id);
+  return -1;
+ }
+ return f->configure(f->user,id);
+}
+static unsigned hd_bounce(switch_flow *f)
+{return f->available(f->user,2)>0?2u:f->available(f->user,1)>0?1u:0u;}
+/* Programmed analog head; target-derived default only when ambiguous. */
+static int active_head(switch_flow *f,unsigned sd)
+{int h=patch_active_head(f->patch);return h<0?(sd==5?1:0):h;}
+/* Any candidate raster live on either head (software AV cache). */
+static int candidate_live(switch_flow *f)
+{
+ patch_cached_video v;
+ if(patch_read_cached_video(f->patch,&v))return 0;
+ return patch_candidate_in_cache(f->patch,&v,0)||patch_candidate_in_cache(f->patch,&v,1);
+}
+/* dev10 primary reprogram path (all consoles): clear the programmed head's
+ * profile-index flag and re-request the SD mode with a non-timing field changed
+ * and restored (buffer format, then pitch). The request is not dropped as a
+ * same-mode no-op, so the AV mode-setter runs a full reprogram from the current
+ * table with no resolution change (owner PAL console, dev9b: format variant,
+ * 574/625 -> 576/624 in ~0.5 s). Returns 0 only when the mode-setter ran. */
+static int reprogram(switch_flow *f,unsigned id)
+{
+ if(!f->reassert)return -1;
+ int head=active_head(f,id);
+ (void)patch_invalidate_head(f->patch,head);
+ int rc=f->reassert(f->user,id);
+ if(f->patch->log)f->patch->log("Reprogram by format reassert id=%u head=%d rc=%d",id,head,rc);
+ return rc;
+}
 int switch_revert(switch_flow *f)
 {
  if(!f->pending)return 0;
  /* Restore RAM BEFORE issuing a fresh profile-changing transition. */
  int ram=patch_undo(f->patch);
  if(ram)return fail(f,"RAM recovery incomplete. Reboot console");
- /* Bounce through the other SD family to force the AV manager to reprogram
-  * stock timing, then return to the original profile. The bounce is
-  * best-effort: a console that cannot configure the opposite SD family (an
-  * NTSC unit refusing 576i, say) must still recover, so only a failure to
-  * reach the original profile is fatal. When the forward flip failed before
-  * leaving the original, the display never changed and this confirms it. */
- /* dev8: prefer the other SD family (15 kHz-safe). If it is refused (single-SD
-  * console), bounce through an available HD mode so returning to the original SD
-  * id is a genuine mode change that re-runs the mode-setter and reprograms stock
-  * timing. Head-flag invalidation is ineffective on single-SD consoles (issue
-  * #1), so it is only a last resort when no HD mode exists. Best-effort: only a
-  * failure to reach the original profile is fatal. */
- if(f->configure(f->user,f->original==4?5:4)){
-  unsigned bounce=f->available(f->user,2)>0?2u:f->available(f->user,1)>0?1u:0u;
-  if(bounce){(void)f->configure(f->user,bounce);}
-  else{int rhead=patch_active_head(f->patch);if(rhead<0)rhead=f->original==5?1:0;(void)patch_invalidate_head(f->patch,rhead);}
+ /* Reprogram the restored (pre-switch) tables in place (format reassert). A
+  * successful reprogram means the mode-setter re-ran from the restored tables,
+  * which is correct even when the pre-switch state was itself a kept candidate
+  * (a live candidate raster is then the right result, so it is not a reason to
+  * flip; owner dev10 log). Only if the reprogram does not reach the mode-setter,
+  * fall back to a real mode change: the other SD family (15 kHz-safe), else an
+  * available HD mode. Best-effort: only failing to reach the original is fatal. */
+ if(reprogram(f,f->original)){
+  if(leave_sd(f,f->original==4?5:4)){
+   unsigned bounce=hd_bounce(f);
+   if(bounce)(void)f->configure(f->user,bounce);
+  }
  }
  int b=f->configure(f->user,f->original);
  if(b)return fail(f,"RAM restored; display recovery failed. Reboot console");
@@ -74,38 +106,28 @@ int switch_begin_target(switch_flow *f,int family,unsigned target,unsigned curre
   if(switch_revert(f))return -1;
   return fail(f,cause);
  }
- /* Preferred path: leave the candidate's SD profile for the other SD family
-  * and return, so the AV manager's profile-change gate reprograms the patched
-  * table. A region-locked console exposes only its own SD standard and cannot
-  * configure the other family, so when that leave fails, fall back.
-  *
-  * dev8: the single-SD fallback forces a real mode change instead of clearing a
-  * head cache flag. The dev7 live log (issue #1) proved that on a single-SD NTSC
-  * console a same-mode re-request (videoConfigure id=4 while already id=4) is a
-  * no-op that never reaches the AV mode-setter, and that zeroing the programmed
-  * head's profile-index flag does not force a reprogram (Post-switch match=0,
-  * head still stock 480/525). So bounce through an available HD mode (720p, else
-  * 1080i): the return to the SD target is then a genuine id change that re-runs
-  * the mode-setter and loads the patched table. 480p is not reachable here
-  * (same id as 480i, only scanMode differs, and configure() sets no scanMode).
-  * The HD bounce is briefly non-15 kHz (black on a 15 kHz CRT) but transient; a
-  * failure reverts cleanly. If no HD mode is available either, fall back to the
-  * old head-flag invalidation (ineffective on issue #1, but harmless). */
- int rc;
- if(f->configure(f->user,f->alternate)){
-  unsigned bounce=f->available(f->user,2)>0?2u:f->available(f->user,1)>0?1u:0u;
-  if(f->patch->log)f->patch->log("Single-SD fallback: HD bounce id=%u (alternate=%u refused)",
-   bounce,f->alternate);
-  if(bounce){
-   rc=f->configure(f->user,bounce)||patch_apply(f->patch,family)||f->configure(f->user,f->target);
-  }else{
-   int head=patch_active_head(f->patch);
-   if(head<0)head=f->target==5?1:0;
-   if(f->patch->log)f->patch->log("Single-SD fallback: no HD mode; invalidate head=%d",head);
-   rc=patch_apply(f->patch,family)||patch_invalidate_head(f->patch,head)||f->configure(f->user,f->target);
+ /* dev10: patch the table, then reprogram in place (format reassert) on every
+  * console. A same-mode re-request alone never reaches the AV mode-setter
+  * (issue #1, dev7 log), and single-SD consoles cannot flip to the other SD
+  * family or reach any HD mode (dev8 log), so the format reassert is the only
+  * path that works everywhere; it also avoids the 50/60 Hz flash of the old
+  * flip. Fallbacks if the candidate is not live afterwards: the old flip via
+  * the other SD family, else a bounce through an available HD mode. */
+ int rc=patch_apply(f->patch,family);
+ if(!rc){
+  int ra=reprogram(f,f->target);
+  int live=!ra&&candidate_live(f);
+  if(f->patch->log)f->patch->log("Format reassert id=%u rc=%d live=%d",f->target,ra,live);
+  if(!live){
+   if(!leave_sd(f,f->alternate)){
+    if(f->patch->log)f->patch->log("Fallback: flip via id=%u",f->alternate);
+    rc=f->configure(f->user,f->target);
+   }else{
+    unsigned bounce=hd_bounce(f);
+    if(f->patch->log)f->patch->log("Fallback: HD bounce id=%u (alternate=%u refused)",bounce,f->alternate);
+    if(bounce)rc=f->configure(f->user,bounce)||f->configure(f->user,f->target);
+   }
   }
- }else{
-  rc=patch_apply(f->patch,family)||f->configure(f->user,f->target);
  }
  if(rc){
   char cause[200];snprintf(cause,sizeof(cause),"%s",f->patch->error[0]?f->patch->error:"Video configuration failed; see diagnostic log");
@@ -125,7 +147,7 @@ int switch_stock_begin(switch_flow *f,unsigned target,unsigned current,int analo
  if(select_modes(f,target,current,analog))return -1;
  if(patch_snapshot(f->patch))return fail(f,f->patch->error);
  f->pending=1;
- if(patch_restore(f->patch)||f->configure(f->user,f->alternate)||f->configure(f->user,target)){
+ if(patch_restore(f->patch)||(reprogram(f,target)&&(leave_sd(f,f->alternate)||f->configure(f->user,target)))){
   char cause[200];snprintf(cause,sizeof(cause),"%s",f->patch->error[0]?f->patch->error:"Stock display request failed");
   if(switch_revert(f))return -1;
   return fail(f,cause);

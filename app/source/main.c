@@ -69,6 +69,7 @@ SYS_PROCESS_PARAM(1001,0x100000);
 #define ENFORCER_READY "/dev_hdd0/tmp/240p_enforcer.ready"
 #define META240_FLAG "/dev_hdd0/tmp/240p_meta240.on"
 #define SCALER_FLAG "/dev_hdd0/tmp/240p_scaler.on"
+#define FORCE_SINGLE_SD_FLAG "/dev_hdd0/tmp/240p_force_single_sd.on"
 #define GAMMA_PATH "/dev_hdd0/game/PS240P001/USRDIR/gamma.txt"
 #define GAMMA_DIR "/dev_hdd0/game/PS240P001/USRDIR/shaders"
 static int gamma_value=CRT_GAMMA_NEUTRAL,gamma_preview,gamma_digit;
@@ -454,20 +455,21 @@ static void deploy_enforcer(void) {
    (unsigned)src_size,(unsigned)(src_hash>>32),(unsigned)(src_hash&0xffffffffu));
 #endif
 }
-static int configure(void *u,unsigned id)
+static int configure_full(unsigned id,unsigned aspect,unsigned format,unsigned pitch_extra)
 {
- (void)u;
  if(wait_flip()||drain())return -1;
  videoResolution res={0};videoConfiguration cfg={0};
  int rc=videoGetResolution((int)id,&res);if(rc)return -1;
- cfg.resolution=(uint8_t)id;cfg.format=VIDEO_BUFFER_FORMAT_XRGB;
- cfg.aspect=state.displayMode.aspect==VIDEO_ASPECT_16_9?VIDEO_ASPECT_16_9:VIDEO_ASPECT_4_3;
+ cfg.resolution=(uint8_t)id;cfg.format=(uint8_t)format;
+ cfg.aspect=(uint8_t)aspect;
  cfg.pitch=res.width*4u;
 #ifdef CRT_ENABLE_CUSTOM_HDMI
  cfg.pitch=(cfg.pitch+1023u)&~1023u;
 #endif
+ cfg.pitch+=pitch_extra;
  /* Nonblocking firmware request; wait for an enabled, matching readback. */
- rc=videoConfigure(0,&cfg,NULL,0);app_log("videoConfigure id=%u result=%08x",id,(unsigned)rc);
+ rc=videoConfigure(0,&cfg,NULL,0);
+ app_log("videoConfigure id=%u aspect=%u format=%u pitch=%u result=%08x",id,(unsigned)cfg.aspect,(unsigned)cfg.format,cfg.pitch,(unsigned)rc);
  if(rc)return -1;
  uint64_t deadline=now()+5000000;
  for(;;){
@@ -482,8 +484,32 @@ static int configure(void *u,unsigned id)
  videoConfiguration actual={0};rc=videoGetConfiguration(0,&actual,NULL);
  app_log("Framebuffer configuration readback rc=%08x id=%u format=%u pitch=%u expected_pitch=%u",
   (unsigned)rc,actual.resolution,actual.format,actual.pitch,cfg.pitch);
- if(rc||actual.resolution!=id||actual.format!=VIDEO_BUFFER_FORMAT_XRGB||actual.pitch!=cfg.pitch)return -1;
+ if(rc||actual.resolution!=id||actual.format!=cfg.format||actual.pitch!=cfg.pitch)return -1;
  return read_video();
+}
+static unsigned current_aspect(void)
+{return state.displayMode.aspect==VIDEO_ASPECT_16_9?VIDEO_ASPECT_16_9:VIDEO_ASPECT_4_3;}
+static int configure(void *u,unsigned id)
+{(void)u;return configure_full(id,current_aspect(),VIDEO_BUFFER_FORMAT_XRGB,0);}
+/* Same SD mode, re-requested with one non-timing field changed and then
+ * restored, so the firmware does not drop it as a same-mode no-op. Variants in
+ * order: buffer format (XBGR), pitch (+1024). Aspect was dropped in dev10: 16:9
+ * is refused at 576i on the owner's console (8002b226). After each, the AV head
+ * profile-index flag (cleared by the caller) is checked: back to valid means the
+ * AV mode-setter ran. Stops at the first variant that reaches it. */
+static int reassert(void *u,unsigned id)
+{
+ (void)u;unsigned a=current_aspect();
+ static const char *names[2]={"format","pitch"};
+ for(int v=0;v<2;v++){
+  int rc=configure_full(id,a,v==0?VIDEO_BUFFER_FORMAT_XBGR:VIDEO_BUFFER_FORMAT_XRGB,v==1?1024u:0u);
+  int back=configure_full(id,a,VIDEO_BUFFER_FORMAT_XRGB,0);
+  int head=patch_active_head(&patch);
+  app_log("Reassert variant=%s id=%u rc=%d back=%d active_head=%d (>=0: mode-setter ran)",names[v],id,rc,back,head);
+  if(back)return -1;
+  if(!rc&&head>=0)return 0;
+ }
+ return -1;
 }
 static int frame(const ui_view *view)
 {
@@ -1186,7 +1212,8 @@ static int begin_picture(int family,unsigned target)
  if(read_video()||inspect()){status("Test stopped",patch.error[0]?patch.error:"Could not query output state");return -1;}
  ui_view view={0};view.title="Changing SD timing";view.text="Picture confirmation follows; automatic recovery in 15 seconds.";view.page=-1;
  if(frame(&view))return -1;
- app_log("BEGIN experiment family=%d target=%u original_id=%u",family,target,state.displayMode.resolution);
+ flow.force_single_sd=flag_present(FORCE_SINGLE_SD_FLAG)?1:0;
+ app_log("BEGIN experiment family=%d target=%u original_id=%u force_single_sd=%d",family,target,state.displayMode.resolution,flow.force_single_sd);
  if(switch_begin_target(&flow,family,target,state.displayMode.resolution,analog())){
   app_log("Experiment failed: %s",flow.error);status("Test stopped",flow.error);return -1;
  }
@@ -1295,7 +1322,7 @@ int main(void)
  if(configure(NULL,initial)){app_log("Startup stopped at video configure");return 1;}
  app_log("Startup scan readback before=%u after=%u",initial_scan,state.displayMode.scanMode);
  rc=ioPadInit(7);if(rc){app_log("Startup controller init rc=%08x",(unsigned)rc);return 1;}
- flow.patch=&patch;flow.available=available;flow.configure=configure;
+ flow.patch=&patch;flow.available=available;flow.configure=configure;flow.reassert=reassert;
  if(crt_gamma_load(GAMMA_PATH,&gamma_value))gamma_value=CRT_GAMMA_NEUTRAL;
  app_log("Gamma preference=%d hundredths; not automatically applied",gamma_value);
  /* Present the menu before any LV1 operation. Inspection is explicit via
