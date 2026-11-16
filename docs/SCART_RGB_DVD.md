@@ -221,3 +221,44 @@ Re-emitting an AV backend command with a wrong field can blank analog output
 until a reboot. It cannot brick the console (no flash/Syscon writes). The probe
 holds any change for a bounded interval and auto-restores, and a soft reboot
 clears everything.
+
+## PROVEN 2026-11-16: encoder fix reproduced live; player +0xf0 is NOT the lever
+
+Live test on the owner's console (PAL 576i, RGB SCART, FHD camera). agy's five
+single-word `bdp_BDVD` candidates from `local_only/scart_green/bdp_dump/agy_findings.md`
+were tested against the running player. Candidate 1 (my test order) = the getter
+`CVDisplaySurface::GetColorSpace()` at `0x008da954`, `0x806300f0` -> `0x38600000`
+(return 0 = RGB).
+
+- **PROVEN (encoder-RGB patch only activates on an encoder reprogram):** the two
+  LV1 `sysmgr_ss` text patches (`0x8000f7dc` -> `0x48000064`,
+  `0x8000f85c` -> `0x60000000`) do nothing while the player is already playing:
+  the encoder colour space is committed only on an actual head reprogram, which
+  happens at **player launch**, not per frame. Applied during playback = still
+  green. Applied **at XMB and held across an XMB->DVD relaunch** = green gone,
+  encoder in RGB passthrough. This is the required procedure (matches the
+  2026-11-15 breakthrough). Each cycle ~40 s; the plugin holds max 60 s
+  (`hold_seconds` 1..60) and refuses `apply`/snapshot while a patch is held
+  (one-owner lock), so the reprogram must come from the player relaunch, not the
+  probe. Player pid changes per launch (`0x1010200` -> `0x1030200`); re-poke the
+  process candidate into the new pid (query `getmem.ps3mapi?proc`).
+- **PROVEN (negative, Candidate 1 getter):** with the encoder in RGB passthrough,
+  two data points, both wrong colour:
+  - player surface = 1 (default, no poke): whole picture magenta
+    (`cam/step3_launch.jpg`).
+  - player surface = 0 (getter -> 0, Candidate 1): green sky, magenta/red ground
+    (`cam/step4_cand1.jpg`).
+  Neither is correct RGB. agy's model (field `0xf0` == 0 -> "identity RGB
+  passthrough" -> correct) assumes the framebuffer is already RGB; the decoded
+  film pixels are mis-coloured under **both** shader branches, so the `+0xf0`
+  field is not the fix. All five candidates route to the same RGB-identity
+  branch, so none can colour-correct YCbCr content. Getter restored to
+  `0x806300f0` after the test; LV1 patches auto-reverted.
+
+**Remaining (handed to a fresh offline RE agent, no console needed):** find why
+the player's **HDMI** output is correct RGB and force that same conversion for
+the analog surface. Target `FUN_00753b8c` (`0x00753b8c`) coefficient math and the
+HDMI-vs-analog path split in the dumps
+(`local_only/scart_green/bdp_dump/bdp_0x10000.bin`,
+`bdp_0x810000.bin`), i.e. the actual YCbCr->RGB matrix selector, not the `0xf0`
+toggle. See `local_only/scart_green/bdp_dump/agy_task2.md`.
