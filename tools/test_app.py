@@ -35,12 +35,13 @@ def main():
         ("gamma", ["tests/test_gamma.c", "app/source/gamma.c", "app/source/ui_layout.c"]),
         ("gamma-service", ["tests/test_gamma_service.c", "plugin/gamma_service.c"]),
         ("gamma-ipc", ["tests/test_gamma_ipc.c", "app/source/gamma_ipc.c", "plugin/gamma_service.c"]),
+        ("boot-plugins", ["tests/test_boot_plugins.c", "app/source/boot_plugins.c"]),
         ("plugin-lifecycle", ["tests/test_plugin_lifecycle.c", "app/source/plugin_lifecycle.c"]),
         ("ps1-audio-log", ["tests/test_ps1_audio_log.c", "plugin/ps1_audio_log.c"]),
         ("vsh-video", ["tests/test_vsh_video.c", "plugin/vsh_video.c"]),
         ("vsh-gamma", ["tests/test_vsh_gamma.c", "plugin/vsh_gamma.c"]),
         ("ui", ["tests/test_ui.c", "app/source/ui_layout.c"]),
-        ("startup", ["tests/test_startup.c", "app/source/lv1_patch.c", "app/source/switch_flow.c", "app/source/ui_layout.c", "app/source/sd_default.c", "app/source/plugin_lifecycle.c", "app/source/gamma.c", "app/source/gamma_ipc.c"]),
+        ("startup", ["tests/test_startup.c", "app/source/lv1_patch.c", "app/source/switch_flow.c", "app/source/ui_layout.c", "app/source/sd_default.c", "app/source/plugin_lifecycle.c", "app/source/gamma.c", "app/source/gamma_ipc.c", "app/source/boot_plugins.c"]),
     ]:
         if "app/source/lv1_patch.c" in sources or name == "vsh-gamma":
             sources = sources + ["app/source/sysmgr.c"]

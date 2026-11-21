@@ -6,6 +6,36 @@ Blu-ray movie playback show a bright green picture. The same discs over
 composite on the same cable look correct. This file records what was proven on
 the console, not the forum folklore (that is in ignored `local_only/scart_green/`).
 
+## Solved by WeebLabs `disc_rgb_fix` (2026-11-21)
+
+The green picture is fixed by a third-party plugin, not by the LV1 or
+`bdp_BDVD` patches investigated below. Source:
+https://github.com/WeebLabs/RGB-DVD-Patch-for-PS3 (MIT, release v2.1.3,
+author's test: CECH-L04, Evilnat 4.92 CEX + Cobra 8.5).
+
+- **CLAIMED (the plugin's docs and captures):** on DVD/Blu-ray start the VSH
+  sends one PS3AV batch (send wrapper at VSH `0x005DED54`, syscall 369) that
+  differs from the XMB RGB batch in two words: `VIDEO_MODE.video_out_format`
+  `0 -> 9` and `AV_VIDEO_CS` out/in `RGB_8 -> YUV444_8`. AV MULTI then carries
+  component video. The plugin sets both words back to RGB.
+- **PROVEN (offline):** the plugin's only firmware gate is a 21-word byte check
+  of that wrapper; the same bytes are at the same address in the private 4.93
+  `vsh.elf`.
+- **PROVEN (owner, 2026-11-21, Evilnat 4.93, SCART RGB):** unmodified
+  `disc_rgb_fix.sprx` (SHA-256 `aff98e5da5b8d0826ab1e9e645d51e7bfd37ffb1027903056b60d7a6f13b1ca1`)
+  loaded at runtime; the DVD picture was correct. Its log reported
+  `REWRITE: DVD-start batch kept RGB` and `send result 0x74` (accepted).
+- UNKNOWN: Blu-ray on 4.93, other firmware, combined use with a 240p test.
+
+CRT Toolset v1.6.1 bundles the plugin unmodified (with its licence) and adds a
+**SCART RGB DVD fix** menu: load now until reboot, and an option to load at
+every boot by adding the plugin to `/dev_hdd0/boot_plugins.txt` (the original
+is backed up once as `boot_plugins.txt.crt-backup`; the edit is written,
+read back and renamed over the list).
+
+The sections below record the earlier investigation, which did not produce a
+working picture.
+
 ## Proven on the live console (read-only snapshots)
 
 Method: webMAN `getmem.ps3mapi` read-only process-memory reads of the running

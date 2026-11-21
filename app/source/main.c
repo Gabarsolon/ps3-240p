@@ -29,6 +29,7 @@
 #include <net/net.h>
 #endif
 #include "ui_layout.h"
+#include "boot_plugins.h"
 #include "switch_flow.h"
 #include "sd_default.h"
 #include "plugin_lifecycle.h"
@@ -1289,6 +1290,150 @@ static void stock_mode(unsigned target)
  status(target==5?"576i selected and saved":"480i selected and saved",
   "Stock timing is active now. The selected XMB/boot default was saved and read back through webMAN. Background correction is stopped. No reboot was requested.");
 }
+/* ---- SCART RGB DVD fix: bundled third-party plugin ------------------------
+ * disc_rgb_fix.sprx v2.1.3 by WeebLabs (MIT), shipped unmodified. It keeps AV
+ * MULTI RGB when the system player starts a DVD/Blu-ray. See
+ * app/assets/third_party/weeblabs/ and docs/SCART_RGB_DVD.md. */
+#define RGBDVD_SRC "/dev_hdd0/game/PS240P001/USRDIR/disc_rgb_fix.sprx"
+#define RGBDVD_DST "/dev_hdd0/plugins/disc_rgb_fix.sprx"
+#define BOOT_LIST "/dev_hdd0/boot_plugins.txt"
+#define BOOT_LIST_NEW "/dev_hdd0/boot_plugins.txt.crt-new"
+#define BOOT_LIST_BACKUP "/dev_hdd0/boot_plugins.txt.crt-backup"
+#define BOOT_LIST_CAPACITY 4096
+/* 0 = copied/already identical and verified, -1 = failed. */
+static int copy_verified(const char *src_path,const char *dst_path)
+{
+#ifndef APP_HOST_TEST
+ int src_size=0,dst_size=0;
+ uint64_t src_hash=file_digest(src_path,&src_size),dst_hash=file_digest(dst_path,&dst_size);
+ if(src_size<=0){app_log("Copy %s: source missing or empty",src_path);return -1;}
+ if(!deploy_needed(src_size,src_hash,dst_size,dst_hash))return 0;
+ int in_fd=-1,out_fd=-1,bad=0;
+ if(sysLv2FsOpen(src_path,SYS_O_RDONLY,&in_fd,0,NULL,0))return -1;
+ if(sysLv2FsOpen(dst_path,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&out_fd,0777,NULL,0)){sysLv2FsClose(in_fd);return -1;}
+ char buf[2048];uint64_t rd=0,wr=0;
+ while(sysLv2FsRead(in_fd,buf,sizeof(buf),&rd)==0&&rd>0)if(sysLv2FsWrite(out_fd,buf,rd,&wr)||wr!=rd){bad=1;break;}
+ sysLv2FsClose(out_fd);sysLv2FsClose(in_fd);
+ int done_size=0;uint64_t done_hash=file_digest(dst_path,&done_size);
+ int rc=bad||deploy_needed(src_size,src_hash,done_size,done_hash)?-1:0;
+ app_log("Copy %s -> %s rc=%d (%u bytes)",src_path,dst_path,rc,(unsigned)done_size);return rc;
+#else
+ (void)src_path;(void)dst_path;return -1;
+#endif
+}
+/* 0 ok (len set), 1 file absent, -1 error or larger than the buffer. */
+static int read_text(const char *path,char *buf,size_t capacity,size_t *len)
+{
+#ifndef APP_HOST_TEST
+ int fd=-1;*len=0;
+ if(sysLv2FsOpen(path,SYS_O_RDONLY,&fd,0,NULL,0))return 1;
+ uint64_t rd=0;int rc=0;
+ while(*len+1<capacity&&sysLv2FsRead(fd,buf+*len,capacity-1-*len,&rd)==0&&rd>0)*len+=(size_t)rd;
+ if(*len+1>=capacity){uint64_t extra=0;char probe;if(sysLv2FsRead(fd,&probe,1,&extra)==0&&extra)rc=-1;}
+ sysLv2FsClose(fd);buf[*len]=0;return rc;
+#else
+ (void)path;(void)buf;(void)capacity;*len=0;return 1;
+#endif
+}
+static int write_text(const char *path,const char *buf,size_t len)
+{
+#ifndef APP_HOST_TEST
+ int fd=-1;uint64_t wr=0;
+ if(sysLv2FsOpen(path,SYS_O_WRONLY|SYS_O_CREAT|SYS_O_TRUNC,&fd,0666,NULL,0))return -1;
+ int rc=len?sysLv2FsWrite(fd,buf,len,&wr):0;
+ if(!rc)rc=sysLv2FsFsync(fd);
+ sysLv2FsClose(fd);return rc||(len&&wr!=len)?-1:0;
+#else
+ (void)path;(void)buf;(void)len;return -1;
+#endif
+}
+/* *loaded = slot of the running plugin (1..6) or 0; *empty = first free slot or 0. */
+static int rgbdvd_slots(unsigned *loaded,unsigned *empty)
+{
+ *loaded=*empty=0;
+ for(unsigned slot=1;slot<=6;slot++){
+  char name[96]={0},path[256]={0};
+  int rc=cobra_mapi(0x47,slot,(uint64_t)(uintptr_t)name,(uint64_t)(uintptr_t)path,0);
+  name[95]=path[255]=0;
+  if(rc&&(uint32_t)rc!=UINT32_C(0x80010006))return -1;
+  if((uint32_t)rc==UINT32_C(0x80010006)||(!name[0]&&!path[0])){if(!*empty)*empty=slot;continue;}
+  if(!strcmp(name,"disc_rgb_fix"))*loaded=slot;
+ }
+ return 0;
+}
+/* 1 = listed in boot_plugins.txt, 0 = not listed or file absent, -1 = unreadable. */
+static int rgbdvd_boot_state(void)
+{
+ static char text[BOOT_LIST_CAPACITY];size_t len=0;
+ int rc=read_text(BOOT_LIST,text,sizeof(text),&len);
+ if(rc==1)return 0;
+ if(rc)return -1;
+ return bp_find(text,len,RGBDVD_DST);
+}
+static void rgbdvd_load_now(void)
+{
+ if(copy_verified(RGBDVD_SRC,RGBDVD_DST)){status("RGB DVD fix not installed","Could not copy disc_rgb_fix.sprx to /dev_hdd0/plugins. Reinstall CRT Toolset (the file ships in the package) and check free space.");return;}
+ unsigned loaded,empty;
+ if(rgbdvd_slots(&loaded,&empty)){status("Plugin slots unreadable","Could not inspect the VSH plugin slots. webMAN/Cobra must be running.");return;}
+ if(loaded){status("Already loaded","The RGB DVD fix is already running. Start a DVD or Blu-ray; it stays RGB until reboot (or turn on Load at every boot).");return;}
+ if(!empty){status("No free plugin slot","All VSH plugin slots are in use. Nothing was unloaded. Reboot, then try again.");return;}
+ int rc=load_vsh_plugin(empty,RGBDVD_DST);
+ unsigned now_loaded=0,ignored=0;int scan=rgbdvd_slots(&now_loaded,&ignored);
+ app_log("RGB DVD fix load slot=%u rc=%08x verified_slot=%u scan=%d",empty,(unsigned)rc,now_loaded,scan);
+ if(rc||scan||!now_loaded){status("RGB DVD fix did not load","The plugin load failed or could not be verified. Nothing else changed. See /dev_hdd0/tmp/ps3_240p.log.");return;}
+ status("RGB DVD fix loaded","Set Video Output to AV MULTI / SCART with RGB. Start a DVD or Blu-ray from the XMB: the picture should stay RGB (no green/purple) until the console reboots.\n\nIt writes a log to /dev_hdd0/tmp/disc_rgb_fix.log. Turn on Load at every boot to keep it after a reboot.");
+}
+/* Checked edit of boot_plugins.txt: the original is saved once as
+ * boot_plugins.txt.crt-backup, the new text is written beside it, read back,
+ * then renamed over the list. */
+static int rgbdvd_boot_set(int enable)
+{
+ static char text[BOOT_LIST_CAPACITY],check[BOOT_LIST_CAPACITY];size_t len=0,check_len=0;
+ int existed=read_text(BOOT_LIST,text,sizeof(text),&len);
+ if(existed<0)return -1;
+ if(!existed){int bsize=0;if(!file_digest(BOOT_LIST_BACKUP,&bsize)&&write_text(BOOT_LIST_BACKUP,text,len))return -2;}
+ if(enable){len=bp_add(text,len,sizeof(text),RGBDVD_DST);if(!len)return -3;}
+ else len=bp_remove(text,len,RGBDVD_DST);
+ if(write_text(BOOT_LIST_NEW,text,len))return -4;
+ if(read_text(BOOT_LIST_NEW,check,sizeof(check),&check_len)!=0||check_len!=len||memcmp(check,text,len))return -5;
+#ifndef APP_HOST_TEST
+ if(sysLv2FsRename(BOOT_LIST_NEW,BOOT_LIST))return -6;
+#endif
+ return rgbdvd_boot_state()==(enable?1:0)?0:-7;
+}
+static void rgbdvd_menu(void)
+{
+ int selected=0;
+ while(!exiting){
+  unsigned loaded=0,empty=0;(void)rgbdvd_slots(&loaded,&empty);
+  int boot=rgbdvd_boot_state();
+  char l0[80],l1[80];
+  snprintf(l0,sizeof(l0),"Load now until reboot: %s",loaded?"loaded":"not loaded");
+  snprintf(l1,sizeof(l1),"Load at every boot: %s",boot==1?"ON (select to turn off)":boot==0?"OFF (select to turn on)":"unknown");
+  const char *options[]={l0,l1,"About / credits","Back"};
+  const int count=(int)(sizeof(options)/sizeof(options[0]));
+  ui_view v={0};v.title="SCART RGB DVD fix";v.items=options;v.count=count;v.selected=selected;v.page=-1;
+  if(frame(&v))break;
+  unsigned key=input();
+  if(key&CIRCLE)break;
+  if(key&UP)selected=(selected+count-1)%count;
+  if(key&DOWN)selected=(selected+1)%count;
+  if(key&CROSS){
+   if(selected==0)rgbdvd_load_now();
+   else if(selected==1){
+    if(boot<0){status("boot_plugins.txt unreadable","The plugin list could not be read, so it was not changed.");continue;}
+    int enable=boot!=1;
+    if(enable&&copy_verified(RGBDVD_SRC,RGBDVD_DST)){status("RGB DVD fix not installed","Could not copy disc_rgb_fix.sprx to /dev_hdd0/plugins, so boot loading was not enabled.");continue;}
+    int rc=rgbdvd_boot_set(enable);
+    app_log("RGB DVD boot %s rc=%d",enable?"enable":"disable",rc);
+    if(rc)status("Boot setting not changed",rc==-3?"boot_plugins.txt has no room for another line. Nothing was changed.":"The plugin list could not be updated and verified. The original file is kept (a first-time backup is boot_plugins.txt.crt-backup).");
+    else status(enable?"Load at boot: ON":"Load at boot: OFF",enable?"Added /dev_hdd0/plugins/disc_rgb_fix.sprx to /dev_hdd0/boot_plugins.txt. It takes effect on the next reboot. The plugin starts 5 seconds after boot and only acts when a DVD/Blu-ray starts.\n\nTo undo: select this option again, or delete that line. If the console ever fails to boot after adding any plugin, start Recovery Mode and choose Restart System; on Evilnat this boots without plugins.":"Removed the plugin line from /dev_hdd0/boot_plugins.txt. It stays loaded until the next reboot.");
+   }
+   else if(selected==2)status("RGB DVD fix / credits","Bundled plugin: RGB DVD Patch for PS3 (disc_rgb_fix 2.1.3) by WeebLabs, MIT licence.\nhttps://github.com/WeebLabs/RGB-DVD-Patch-for-PS3\n\nWhat it does: when the system player starts a DVD or Blu-ray, the PS3 switches AV MULTI from RGB to component video, which looks green and purple on SCART RGB. The plugin sets that one start command back to RGB. HDMI is never affected.\n\nThe file is included unmodified. Written for Evilnat 4.92 + Cobra by its author; it checks the exact VSH code and does nothing if it does not match. Confirmed working on Evilnat 4.93 in this project. Requires Video Output set to AV MULTI / SCART with RGB.\n\nLicence text: USRDIR/WeebLabs-LICENSE.txt");
+   else break;
+  }
+ }
+}
 int main(void)
 {
  (void)sysLv2FsMkdir("/dev_hdd0/tmp",0777);
@@ -1348,6 +1493,7 @@ int main(void)
 #ifdef CRT_ENABLE_CUSTOM_HDMI
   "HDMI custom resolutions",
 #endif
+  "SCART RGB DVD fix",
   "Exit to XMB"
  };
  const int item_count=(int)(sizeof(items)/sizeof(items[0]));
@@ -1410,6 +1556,7 @@ int main(void)
 #ifdef CRT_ENABLE_CUSTOM_HDMI
    else if(selected==10)custom_menu();
 #endif
+   else if(selected==item_count-2)rgbdvd_menu();
    else break;
    next_memory_poll=0;
   }

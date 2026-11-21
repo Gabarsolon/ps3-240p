@@ -129,7 +129,7 @@ int ioPadGetData(int port,padData *p)
 {
  assert(port==0&&flip_mask==3&&completed_frames>=2&&!os_active());memset(p,0,sizeof(*p));p->len=1;
  if(scenario==22){
-  const unsigned script[]={UP,0,UP,0,CROSS,0,CROSS,0,CIRCLE,0,CIRCLE,0,CIRCLE};
+  const unsigned script[]={UP,0,UP,0,UP,0,CROSS,0,CROSS,0,CIRCLE,0,CIRCLE,0,CIRCLE};
   assert(pad_calls<sizeof(script)/sizeof(script[0]));unsigned key=script[pad_calls++];
   p->BTN_UP=!!(key&UP);p->BTN_CROSS=!!(key&CROSS);p->BTN_CIRCLE=!!(key&CIRCLE);
  }else if(scenario==19||scenario==20){
@@ -143,10 +143,12 @@ int ioPadGetData(int port,padData *p)
   p->BTN_DOWN=!!(key&DOWN);p->BTN_CROSS=!!(key&CROSS);p->BTN_UP=!!(key&UP);
   p->BTN_RIGHT=!!(key&RIGHT);p->BTN_CIRCLE=!!(key&CIRCLE);pad_calls++;
  }else if(scenario==15||scenario==16){
-  if(pad_calls==0||pad_calls==2)p->BTN_UP=1;
-  else if(pad_calls==4)p->BTN_CROSS=1;
-  else if(pad_calls==5||pad_calls==7)p->BTN_CIRCLE=1;
-  pad_calls++;assert(pad_calls<=8);
+  /* Menu ends with "Recheck timing memory", "SCART RGB DVD fix", "Exit":
+   * three UPs from the top reach Recheck. */
+  if(pad_calls==0||pad_calls==2||pad_calls==4)p->BTN_UP=1;
+  else if(pad_calls==6)p->BTN_CROSS=1;
+  else if(pad_calls==7||pad_calls==9)p->BTN_CIRCLE=1;
+  pad_calls++;assert(pad_calls<=10);
  }else if(scenario==17||scenario==18){pad_calls++;assert(pad_calls<30000);}
  else if(scenario==8){
   /* 7-item menu: DOWN, release, DOWN reach the PAL 288p test (item 2). */
@@ -190,7 +192,7 @@ int main(int argc,char **argv)
   assert(strstr(log_capture,"Framebuffer configuration readback rc=00000000 id=1 format=0 pitch=7680"));
   if(scenario==21)assert(flips==2&&pad_calls==1);
   else {
-   assert(pad_calls==13&&strstr(log_capture,"HD app preflight refused"));
+   assert(pad_calls==15&&strstr(log_capture,"HD app preflight refused"));
 #ifdef CRT_ENABLE_HD540
    assert(!hd_pending_sequence);
 #endif
@@ -208,7 +210,7 @@ int main(int argc,char **argv)
   assert(strstr(log_capture,"Sysutil EXIT_GAME")&&strstr(log_capture,"Exit; pending_recovery=0"));
  }else if(scenario==15||scenario==16){
   assert(rc==0&&exit_code==0&&configures==1&&uart_probes==1&&uart_probed);
-  assert(!patch.ready&&backend==0&&pad_calls==8);
+  assert(!patch.ready&&backend==0&&pad_calls==10);
   assert(uart_permission==(scenario==16?0:(int)0x80010003u));
   /* A failed resolve must not emit the old, uninitialized probe result. */
   assert(!strstr(log_capture,"descriptor tables unavailable"));
