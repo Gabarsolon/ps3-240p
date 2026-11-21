@@ -30,8 +30,10 @@ author's test: CECH-L04, Evilnat 4.92 CEX + Cobra 8.5).
 CRT Toolset v1.6.1 bundles the plugin unmodified (with its licence) and adds a
 **SCART RGB DVD fix** menu: load now until reboot, and an option to load at
 every boot by adding the plugin to `/dev_hdd0/boot_plugins.txt` (the original
-is backed up once as `boot_plugins.txt.crt-backup`; the edit is written,
-read back and renamed over the list).
+is backed up once as `boot_plugins.txt.crt-backup`; the list is rewritten
+and read back, and the original text is restored if the readback differs).
+A first build used write-then-rename; LV2 refused the rename over an existing
+file (`rc=-6`, owner test 2026-11-21), so it was replaced.
 
 The sections below record the earlier investigation, which did not produce a
 working picture.

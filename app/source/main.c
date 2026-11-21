@@ -1297,7 +1297,6 @@ static void stock_mode(unsigned target)
 #define RGBDVD_SRC "/dev_hdd0/game/PS240P001/USRDIR/disc_rgb_fix.sprx"
 #define RGBDVD_DST "/dev_hdd0/plugins/disc_rgb_fix.sprx"
 #define BOOT_LIST "/dev_hdd0/boot_plugins.txt"
-#define BOOT_LIST_NEW "/dev_hdd0/boot_plugins.txt.crt-new"
 #define BOOT_LIST_BACKUP "/dev_hdd0/boot_plugins.txt.crt-backup"
 #define BOOT_LIST_CAPACITY 4096
 /* 0 = copied/already identical and verified, -1 = failed. */
@@ -1384,22 +1383,25 @@ static void rgbdvd_load_now(void)
  status("RGB DVD fix loaded","Set Video Output to AV MULTI / SCART with RGB. Start a DVD or Blu-ray from the XMB: the picture should stay RGB (no green/purple) until the console reboots.\n\nIt writes a log to /dev_hdd0/tmp/disc_rgb_fix.log. Turn on Load at every boot to keep it after a reboot.");
 }
 /* Checked edit of boot_plugins.txt: the original is saved once as
- * boot_plugins.txt.crt-backup, the new text is written beside it, read back,
- * then renamed over the list. */
+ * boot_plugins.txt.crt-backup, the list is rewritten and read back, and the
+ * original text is written back if the readback differs. (LV2 cannot rename
+ * over an existing file, so there is no write-then-rename step.) */
 static int rgbdvd_boot_set(int enable)
 {
- static char text[BOOT_LIST_CAPACITY],check[BOOT_LIST_CAPACITY];size_t len=0,check_len=0;
+ static char text[BOOT_LIST_CAPACITY],orig[BOOT_LIST_CAPACITY],check[BOOT_LIST_CAPACITY];
+ size_t len=0,check_len=0;
  int existed=read_text(BOOT_LIST,text,sizeof(text),&len);
  if(existed<0)return -1;
+ size_t orig_len=len;memcpy(orig,text,len);
  if(!existed){int bsize=0;if(!file_digest(BOOT_LIST_BACKUP,&bsize)&&write_text(BOOT_LIST_BACKUP,text,len))return -2;}
  if(enable){len=bp_add(text,len,sizeof(text),RGBDVD_DST);if(!len)return -3;}
  else len=bp_remove(text,len,RGBDVD_DST);
- if(write_text(BOOT_LIST_NEW,text,len))return -4;
- if(read_text(BOOT_LIST_NEW,check,sizeof(check),&check_len)!=0||check_len!=len||memcmp(check,text,len))return -5;
-#ifndef APP_HOST_TEST
- if(sysLv2FsRename(BOOT_LIST_NEW,BOOT_LIST))return -6;
-#endif
- return rgbdvd_boot_state()==(enable?1:0)?0:-7;
+ if(write_text(BOOT_LIST,text,len)||read_text(BOOT_LIST,check,sizeof(check),&check_len)!=0||
+    check_len!=len||memcmp(check,text,len)){
+  (void)write_text(BOOT_LIST,orig,orig_len);
+  return -4;
+ }
+ return rgbdvd_boot_state()==(enable?1:0)?0:-5;
 }
 static void rgbdvd_menu(void)
 {
